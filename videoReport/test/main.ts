@@ -2,7 +2,7 @@ import { config } from 'dotenv'
 import { handler } from '../src/index'
 
 // Load env vars from .env
-config()
+config({ path: __dirname + '/../../.env' })
 
 // Invoke the lambda entrypoint
 handler({

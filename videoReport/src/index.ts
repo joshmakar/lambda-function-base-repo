@@ -1,4 +1,5 @@
 import * as mysql from 'promise-mysql';
+import * as Bluebird from 'bluebird';
 
 /**
  * This is the entry point for the Lambda function
@@ -31,8 +32,15 @@ export async function handler(event?: VideoReportEventUnchecked) {
 
     const safeDealerIds = event.dealerIDs.map(id => mysql.escape(id)).join(',')
     try {
-        const result = (await indexDbConn.query(`SELECT * FROM dealer WHERE iddealer IN (${safeDealerIds})`)) as Dealer[];
-        console.log(JSON.stringify(result[0]))
+        const result = (await indexDbConn.query(`
+            SELECT dealer.iddealer, database.name, database.user, database.password, databaseserver.IP FROM dealer 
+            INNER JOIN instance ON instance.idinstance = dealer.instance_idinstance
+            INNER JOIN \`database\` ON database.iddatabase = instance.database_iddatabase
+            INNER JOIN databaseserver ON databaseserver.iddatabaseserver = database.databaseServer_iddatabaseServer
+            WHERE iddealer IN (${safeDealerIds})
+        `)) as SelectDealerDbInfoResult[];
+        const rows = await Promise.all(result.map(getReportDataForDealer))
+        console.table(rows)
     } catch (err) {
         await indexDbConn.end()
         throw err
@@ -43,6 +51,34 @@ export async function handler(event?: VideoReportEventUnchecked) {
     return 'Done!';
 };
 
+export async function getReportDataForDealer(dealerDbConnInfo: SelectDealerDbInfoResult): Promise<ReportRow> {
+    const reportRow: ReportRow = {};
+    const dealerDbConn = await mysql.createConnection({
+        host: dealerDbConnInfo.IP || '',
+        user: dealerDbConnInfo.user || '',
+        password: dealerDbConnInfo.password || '',
+        database: dealerDbConnInfo.name || ''
+    });
+    const [
+        roCountResult,
+        apptCountResult
+    ] = await Promise.all([
+        (dealerDbConn.query(`SELECT count(id) as count FROM auto_repair_order`)) as (Bluebird<{ count: number }[]>),
+        (dealerDbConn.query(`SELECT count(id) as count FROM auto_appointment`)) as (Bluebird<{ count: number }[]>)
+    ])
+    console.log(roCountResult)
+    reportRow['Repair Order Count'] = roCountResult[0] ? roCountResult[0].count : undefined
+    reportRow['Appointment Count'] = apptCountResult[0] ? apptCountResult[0].count : undefined
+
+    await dealerDbConn.end()
+    return reportRow
+}
+
+export interface ReportRow {
+    'Repair Order Count'?: number;
+    'Appointment Count'?: number
+}
+
 export type VideoReportEventUnchecked = Partial<VideoReportEvent>;
 export interface VideoReportEvent {
     dealerIDs: string[],
@@ -51,55 +87,10 @@ export interface VideoReportEvent {
     endDate: string
 }
 
-// Define types for tables in the unotifi_com_index database
-export interface Dealer {
-    iddealer: string;
-    name?: string;
-    address_line_1?: string;
-    address_line_2?: string;
-    city_name?: string;
-    state_code?: string;
-    zip_code?: string;
-    country_code?: string;
-    latitude?: number;
-    longitude?: number;
-    internal_code: string;
-    voip_phone_number?: string;
-    voip_phone_number_sid?: string;
-    print_campaign_limit: number;
-    print_campaign_limit_interval?: string;
-    print_campaign_limit_period?: number;
-    print_campaign_limit_total?: number;
-    APIKey?: string;
-    ClientAPIKey?: string;
-    instance_idinstance: string;
-    created_user: string;
-    modified_user: string;
-    created_date: Date;
-    modified_date: Date;
-    disable: number;
-    imported_auto_dealer_id?: string;
-    external_code: string;
-    dealer_group_id?: string;
-    watson_credentials: string;
-    import_batch_data: number;
-    import_real_time_data: number;
-    filter_data_by_vehicle_make: number;
-    filter_data_by_vehicle_make_details?: string;
-    holiday_notification: Date;
-    timezone: string;
-    send_to_cerebri: number;
-    send_docs_to_service: number;
-    redcap_code?: string;
-    deleted_date?: unknown;
-    dealer_management_system_id: string;
-    sales_rep?: string;
-    technical_onboarding_rep?: string;
-    onboarding_rep?: string;
-    account_rep: string;
-    lob_enabled: number;
-    lob_started_at?: unknown;
-    lob_address_id?: string;
-    lob_address_last_updated_at?: unknown;
-    launch_at?: unknown;
+export interface SelectDealerDbInfoResult {
+    iddealer: string | null;
+    name: string | null;
+    user: string | null;
+    password: string | null;
+    IP: string | null;
 }
