@@ -1,6 +1,9 @@
 # build output
 */build
 
+# env vars
+.env
+
 # Logs
 logs
 *.log
