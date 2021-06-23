@@ -1,4 +1,4 @@
-name: Build & Deploy to AWS Lambda
+name: Build & Deploy Video Report
 
 # Controls when the action will run. 
 on:
@@ -36,4 +36,4 @@ jobs:
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws_region: ${{ secrets.AWS_REGION }}
           function_name: videoReportStaging
-          source: build/*
+          source: videoReport/build/*
