@@ -1,5 +1,4 @@
 import * as mysql from 'promise-mysql';
-import { Dealer } from '../../types/db/unotifiComIndex'
 
 /**
  * This is the entry point for the Lambda function
@@ -50,4 +49,57 @@ export interface VideoReportEvent {
     emailRecipients: string[],
     startDate: string,
     endDate: string
+}
+
+// Define types for tables in the unotifi_com_index database
+export interface Dealer {
+    iddealer: string;
+    name?: string;
+    address_line_1?: string;
+    address_line_2?: string;
+    city_name?: string;
+    state_code?: string;
+    zip_code?: string;
+    country_code?: string;
+    latitude?: number;
+    longitude?: number;
+    internal_code: string;
+    voip_phone_number?: string;
+    voip_phone_number_sid?: string;
+    print_campaign_limit: number;
+    print_campaign_limit_interval?: string;
+    print_campaign_limit_period?: number;
+    print_campaign_limit_total?: number;
+    APIKey?: string;
+    ClientAPIKey?: string;
+    instance_idinstance: string;
+    created_user: string;
+    modified_user: string;
+    created_date: Date;
+    modified_date: Date;
+    disable: number;
+    imported_auto_dealer_id?: string;
+    external_code: string;
+    dealer_group_id?: string;
+    watson_credentials: string;
+    import_batch_data: number;
+    import_real_time_data: number;
+    filter_data_by_vehicle_make: number;
+    filter_data_by_vehicle_make_details?: string;
+    holiday_notification: Date;
+    timezone: string;
+    send_to_cerebri: number;
+    send_docs_to_service: number;
+    redcap_code?: string;
+    deleted_date?: unknown;
+    dealer_management_system_id: string;
+    sales_rep?: string;
+    technical_onboarding_rep?: string;
+    onboarding_rep?: string;
+    account_rep: string;
+    lob_enabled: number;
+    lob_started_at?: unknown;
+    lob_address_id?: string;
+    lob_address_last_updated_at?: unknown;
+    launch_at?: unknown;
 }
