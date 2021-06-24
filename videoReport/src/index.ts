@@ -59,7 +59,8 @@ export async function handler(event?: VideoReportEvent) {
             WHERE iddealer IN (${safeDealerIds})
         `)) as SelectDealerDbInfoResult[];
 
-        const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)))
+        // const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)))
+        const rows: {}[] = []
 
         await indexDbConn.end()
 
