@@ -58,12 +58,12 @@ export async function handler(event?: VideoReportEvent) {
             INNER JOIN databaseserver ON databaseserver.iddatabaseserver = database.databaseServer_iddatabaseServer
             WHERE iddealer IN (${safeDealerIds})
         `)) as SelectDealerDbInfoResult[];
-        const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)))
-
-        await indexDbConn.end()
         if ('' == '') {
             return 'queried index db!'
         }
+        const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)))
+
+        await indexDbConn.end()
 
         // Generate the CSV string (contents of a csv file) using csv-generate's sync API. If this data set ever gets huge, we'll need to use the callback or stream API.
         const csvString = stringify(rows, { header: true })
