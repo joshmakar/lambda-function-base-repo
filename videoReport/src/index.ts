@@ -1,15 +1,23 @@
 import * as mysql from 'promise-mysql';
 import stringify from 'csv-stringify/lib/sync'
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { v4 } from 'uuid';
+
+const s3Client = new S3Client({ region: 'us-east-1' });
+const reportBucket = "unotifi-reports"
 
 /**
  * This is the entry point for the Lambda function
  */
 export async function handler(event?: VideoReportEvent) {
+    // Fore setting defaults and file upload name
+    const todayYMD = (new Date()).toISOString().split('T')[0]!
+
     // Set input defaults
     const startDateObj = new Date();
     startDateObj.setMonth(startDateObj.getMonth() - 1);
     let startDateYMD = startDateObj.toISOString().split('T')[0]!
-    let endDateYMD = (new Date()).toISOString().split('T')[0]!
+    let endDateYMD = todayYMD
 
     // Sanitize date overrides
     if (event?.startDate) {
@@ -55,8 +63,20 @@ export async function handler(event?: VideoReportEvent) {
 
         // Generate the CSV string (contents of a csv file) using csv-generate's sync API. If this data set ever gets huge, we'll need to use the callback or stream API.
         const csvString = stringify(rows, { header: true })
-        console.log(csvString)
-        return 'TODO S3 URL';
+
+        // Upload that bad boy to S3
+        // I just appended a random string in the top level folder name for a bit more obfuscation
+        const filePath = `video-report-3KCe4kZqXCkpZdp4/video-report_${todayYMD}_${v4()}.csv`;
+        await s3Client.send(new PutObjectCommand({
+            Bucket: reportBucket,
+            Key: filePath,
+            Body: csvString
+        }));
+        const reportURL = `https://${reportBucket}.s3.amazonaws.com/${filePath}`;
+        return {
+            reportURL,
+            reportData: rows
+        };
     } catch (err) {
         // Close the db connection, even if there's an error. This avoids a hanging process.
         await indexDbConn.end()
