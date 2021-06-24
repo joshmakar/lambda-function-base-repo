@@ -31,7 +31,7 @@ jobs:
         run: rm -rf node_modules/.bin
       
       - name: Typescript Compile
-        run: npx tsc src/* --outDir build
+        run: npx tsc -p tsconfig-build.json
 
       - uses: appleboy/lambda-action@master
         with:
