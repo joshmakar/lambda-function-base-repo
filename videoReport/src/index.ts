@@ -64,19 +64,16 @@ export async function handler(event?: VideoReportEvent) {
         await indexDbConn.end()
 
         // Generate the CSV string (contents of a csv file) using csv-generate's sync API. If this data set ever gets huge, we'll need to use the callback or stream API.
-        const csvString = stringify(rows, { header: true })
-        if ('' == '') {
-            return 'db was not the problem'
-        }
+        // const csvString = stringify(rows, { header: true })
 
         // Upload that bad boy to S3
         // I just appended a random string in the top level folder name for a bit more obfuscation
         const filePath = `video-report-3KCe4kZqXCkpZdp4/video-report_${todayYMD}_${v4()}.csv`;
-        await s3Client.send(new PutObjectCommand({
-            Bucket: reportBucket,
-            Key: filePath,
-            Body: csvString
-        }));
+        // await s3Client.send(new PutObjectCommand({
+        //     Bucket: reportBucket,
+        //     Key: filePath,
+        //     Body: csvString
+        // }));
         const reportURL = `https://${reportBucket}.s3.amazonaws.com/${filePath}`;
         return {
             reportURL,
