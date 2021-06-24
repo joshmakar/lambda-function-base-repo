@@ -44,8 +44,12 @@ export async function handler(event?: VideoReportEvent) {
         host: process.env['UNOTIFI_COM_INDEX_DB_HOST'],
         user: process.env['UNOTIFI_COM_INDEX_DB_USER'],
         password: process.env['UNOTIFI_COM_INDEX_DB_PASS'],
-        database: 'unotifi_com_index'
+        database: 'unotifi_com_index',
+        timeout: 5000
     });
+    if ('' == '') {
+        return 'connected to index db!'
+    }
 
     // I couldn't figure out how to paramaterize a WHERE IN array, so manually escape the array values
     const safeDealerIds = event.dealerIDs.map(id => mysql.escape(id)).join(',')
