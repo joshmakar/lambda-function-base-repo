@@ -1,18 +1,27 @@
 import * as mysql from 'promise-mysql';
+import stringify from 'csv-stringify/lib/sync'
 
 /**
  * This is the entry point for the Lambda function
  */
 export async function handler(event?: VideoReportEvent) {
+    // Set input defaults
+    const startDateObj = new Date();
+    startDateObj.setMonth(startDateObj.getMonth() - 1);
+    let startDateYMD = startDateObj.toISOString().split('T')[0]!
+    let endDateYMD = (new Date()).toISOString().split('T')[0]!
+
+    // Sanitize date overrides
+    if (event?.startDate) {
+        startDateYMD = new Date(event.startDate).toISOString().split('T')[0] || startDateYMD
+    }
+    if (event?.endDate) {
+        endDateYMD = new Date(event.endDate).toISOString().split('T')[0] || endDateYMD
+    }
+
     // Check required input
     if (!event?.dealerIDs?.length) {
         throw new Error('Missing dealerIDs in event body')
-    }
-    if (!event?.emailRecipients?.length) {
-        throw new Error('Missing emailRecipients in event body')
-    }
-    if (event.startDate?.length != 10 || event.endDate?.length != 10) {
-        throw new Error('startDate and endDate must be valid YYYY-MM-DD dates in event body')
     }
 
     // Check required environment variables
@@ -40,13 +49,14 @@ export async function handler(event?: VideoReportEvent) {
             INNER JOIN databaseserver ON databaseserver.iddatabaseserver = database.databaseServer_iddatabaseServer
             WHERE iddealer IN (${safeDealerIds})
         `)) as SelectDealerDbInfoResult[];
-        const rows = await Promise.all(dealerInfoResult.map(getReportRowForDealer))
-        console.table(rows)
+        const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)))
 
         await indexDbConn.end()
 
-        // TODO return csv link in s3
-        return 'Done!';
+        // Generate the CSV string (contents of a csv file) using csv-generate's sync API. If this data set ever gets huge, we'll need to use the callback or stream API.
+        const csvString = stringify(rows, { header: true })
+        console.log(csvString)
+        return 'TODO S3 URL';
     } catch (err) {
         // Close the db connection, even if there's an error. This avoids a hanging process.
         await indexDbConn.end()
@@ -57,7 +67,7 @@ export async function handler(event?: VideoReportEvent) {
 /**
  * Concurrently executes all aggregate queries for a dealer. This function should also be called concurrently for each dealer (e.g. using Promise.all).
  */
-export async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult): Promise<ReportRow> {
+async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult, startDate: string, endDate: string): Promise<ReportRow> {
     const reportRow: ReportRow = {
         'Dealer ID': dealerDbConnInfo.iddealer,
         'Dealer Name': dealerDbConnInfo.dealerName || ''
@@ -72,9 +82,21 @@ export async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfo
     });
 
     // This is just a placeholder function to run a simple aggregate query. In practice, we'll need one of these functions for each column of the report.
-    const countQuery = async (table: string): Promise<number | undefined> => {
-        // Typecasting (`as` keyword) here because mysql.query types don't allow you to pass in a type argument...
-        const countResult = await dealerDbConn.query(`SELECT count(id) as count FROM ${table}`) as { count: number }[]
+    const countROQuery = async (): Promise<number | undefined> => {
+        const countResult = await dealerDbConn.query(
+            `SELECT count(id) as count FROM auto_repair_order WHERE service_closed_date BETWEEN ? AND ?`,
+            [startDate, endDate]
+            // Typecasting here because mysql.query types don't allow you to pass in a type argument...
+        ) as { count: number }[]
+        return countResult && countResult[0] ? countResult[0].count : undefined;
+    }
+    // This is just a placeholder function to run a simple aggregate query. In practice, we'll need one of these functions for each column of the report.
+    const countApptQuery = async (): Promise<number | undefined> => {
+        const countResult = await dealerDbConn.query(
+            `SELECT count(id) as count FROM auto_appointment WHERE appointment_date BETWEEN ? AND ?`,
+            [startDate, endDate]
+            // Typecasting here because mysql.query types don't allow you to pass in a type argument...
+        ) as { count: number }[]
         return countResult && countResult[0] ? countResult[0].count : undefined;
     }
 
@@ -86,11 +108,9 @@ export async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfo
             roCountResult,
             apptCountResult
         ] = await Promise.all([
-            countQuery('auto_repair_order'),
-            countQuery('auto_appointment')
+            countROQuery(),
+            countApptQuery()
         ])
-
-        console.log(roCountResult)
 
         // Assign all the db results to the CSV row
         reportRow['Repair Order Count'] = roCountResult
@@ -110,7 +130,7 @@ export async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfo
 /**
  * Represents a row of the output CSV file
  */
-export interface ReportRow {
+interface ReportRow {
     'Dealer Name'?: string;
     'Dealer ID'?: string;
     'Repair Order Count'?: number;
@@ -120,7 +140,7 @@ export interface ReportRow {
 /**
  * JSON input of the lambda function
  */
-export interface VideoReportEvent {
+interface VideoReportEvent {
     dealerIDs?: string[],
     emailRecipients?: string[],
     startDate?: string,
@@ -130,7 +150,7 @@ export interface VideoReportEvent {
 /**
  * Result of the query that fetches dealer db connection info
  */
-export interface SelectDealerDbInfoResult {
+interface SelectDealerDbInfoResult {
     iddealer: string;
     dealerName: string | null;
     name: string | null;

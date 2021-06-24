@@ -13,6 +13,6 @@ handler({
         "023d52cb-1317-4a75-baca-eb7eb8ebfb9b",
     ],
     emailRecipients: ["one@example.com"],
-    startDate: "2021-05-18",
-    endDate: "2021-06-18"
+    // startDate: "2021-06-23",
+    // endDate: "2021-06-24"
 }).then(resp => console.log('Lambda fn completed with response:', resp))
