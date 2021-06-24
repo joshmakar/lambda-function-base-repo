@@ -47,9 +47,6 @@ export async function handler(event?: VideoReportEvent) {
         database: 'unotifi_com_index',
         timeout: 5000
     });
-    if ('' == '') {
-        return 'connected to index db!'
-    }
 
     // I couldn't figure out how to paramaterize a WHERE IN array, so manually escape the array values
     const safeDealerIds = event.dealerIDs.map(id => mysql.escape(id)).join(',')
@@ -64,6 +61,9 @@ export async function handler(event?: VideoReportEvent) {
         const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)))
 
         await indexDbConn.end()
+        if ('' == '') {
+            return 'queried index db!'
+        }
 
         // Generate the CSV string (contents of a csv file) using csv-generate's sync API. If this data set ever gets huge, we'll need to use the callback or stream API.
         const csvString = stringify(rows, { header: true })
