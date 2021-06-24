@@ -100,7 +100,8 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
         host: dealerDbConnInfo.IP || '',
         user: dealerDbConnInfo.user || '',
         password: dealerDbConnInfo.password || '',
-        database: dealerDbConnInfo.name || ''
+        database: dealerDbConnInfo.name || '',
+        timeout: 5000
     });
 
     // This is just a placeholder function to run a simple aggregate query. In practice, we'll need one of these functions for each column of the report.
