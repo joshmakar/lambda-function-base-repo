@@ -1,6 +1,7 @@
 import * as mysql from 'promise-mysql';
 import stringify from 'csv-stringify/lib/sync'
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import sgMail from '@sendgrid/mail'
 import { v4 } from 'uuid';
 
 const s3Client = new S3Client({ region: 'us-east-1' });
@@ -33,7 +34,7 @@ export async function handler(event?: VideoReportEvent) {
     }
 
     // Check required environment variables
-    ['UNOTIFI_COM_INDEX_DB_HOST', 'UNOTIFI_COM_INDEX_DB_USER', 'UNOTIFI_COM_INDEX_DB_PASS'].forEach(envVar => {
+    ['UNOTIFI_COM_INDEX_DB_HOST', 'UNOTIFI_COM_INDEX_DB_USER', 'UNOTIFI_COM_INDEX_DB_PASS', 'SENDGRID_API_KEY'].forEach(envVar => {
         if (!process.env[envVar]) {
             throw new Error('Missing env var: ' + envVar)
         }
@@ -73,6 +74,18 @@ export async function handler(event?: VideoReportEvent) {
             Body: csvString
         }));
         const reportURL = `https://${reportBucket}.s3.amazonaws.com/${filePath}`;
+
+
+        if (event.emailRecipients?.length) {
+            sgMail.setApiKey(process.env['SENDGRID_API_KEY'] + '')
+            await sgMail.send({
+                to: event.emailRecipients,
+                from: 'donotreply@unotifi.com',
+                subject: 'Unotifi Report - Dealer Repair Orders With Video',
+                text: `Start Date: ${startDateYMD}\nEnd Date: ${endDateYMD}\nReport Download URL: ${reportURL}`,
+                html: `Download your report <a href="${reportURL}">here</a>.<br \>Start Date: ${startDateYMD}<br />End Date: ${endDateYMD}`,
+            });
+        }
 
         await indexDbConn.end()
         return {
