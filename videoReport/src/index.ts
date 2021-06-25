@@ -1,7 +1,7 @@
 import * as mysql from 'promise-mysql';
 import stringify from 'csv-stringify/lib/sync'
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import sgMail from '@sendgrid/mail'
+import sendgrid from '@sendgrid/mail'
 import { v4 } from 'uuid';
 
 const s3Client = new S3Client({ region: 'us-east-1' });
@@ -62,28 +62,44 @@ export async function handler(event?: VideoReportEvent) {
 
         const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)))
 
-        // Generate the CSV string (contents of a csv file) using csv-generate's sync API. If this data set ever gets huge, we'll need to use the callback or stream API.
-        const csvString = stringify(rows, { header: true })
+        // String if results are uploaded as a csv, null otherwise
+        let reportURL: string | null = null;
 
-        // Upload that bad boy to S3
-        // I just appended a random string in the top level folder name for a bit more obfuscation
-        const filePath = `video-report-3KCe4kZqXCkpZdp4/video-report_${todayYMD}_${v4()}.csv`;
-        await s3Client.send(new PutObjectCommand({
-            Bucket: reportBucket,
-            Key: filePath,
-            Body: csvString
-        }));
-        const reportURL = `https://${reportBucket}.s3.amazonaws.com/${filePath}`;
-
-
+        // If email recipients are set, create a csv, upload it to s3, and email a link to the recipients
         if (event.emailRecipients?.length) {
-            sgMail.setApiKey(process.env['SENDGRID_API_KEY'] + '')
-            await sgMail.send({
+            // Generate the CSV string (contents of a csv file) using csv-generate's sync API. If this data set ever gets huge, we'll need to use the callback or stream API.
+            const csvString = stringify(rows, { header: true })
+
+            // Upload that bad boy to S3
+            // I just appended a random string in the top level folder name for a bit more obfuscation
+            const filePath = `video-report-3KCe4kZqXCkpZdp4/video-report_${todayYMD}_${v4()}.csv`;
+            await s3Client.send(new PutObjectCommand({
+                Bucket: reportBucket,
+                Key: filePath,
+                Body: csvString
+            }));
+            reportURL = `https://${reportBucket}.s3.amazonaws.com/${filePath}`;
+
+            sendgrid.setApiKey(process.env['SENDGRID_API_KEY'] + '')
+            await sendgrid.send({
                 to: event.emailRecipients,
                 from: 'donotreply@unotifi.com',
-                subject: 'Unotifi Report - Dealer Repair Orders With Video',
+                subject: 'Dealer ROI level Video Report from Unotifi',
+                // If we ever need this content to be updated for non-Audi dealers, we should use sendgrid templates
                 text: `Start Date: ${startDateYMD}\nEnd Date: ${endDateYMD}\nReport Download URL: ${reportURL}`,
-                html: `Download your report <a href="${reportURL}">here</a>.<br \>Start Date: ${startDateYMD}<br />End Date: ${endDateYMD}`,
+                html: `
+                    <p>
+                        Please click <a href="${reportURL}">this link</a> to download the month end Audi Dealer level Video Report for dealers on Unotifi.
+                        <br />Start Date: ${startDateYMD}
+                        <br />End Date: ${endDateYMD}
+                    </p>
+                    <p>
+                        <br />Thanks – Unotifi
+                        <br /><a href="mailto:support@unotifi.com">support@unotifi.com</a>
+                        <br /><a href="http://www.unotificrm.com">www.unotificrm.com</a>
+                        <br />866-500-6161
+                    </p>
+                `,
             });
         }
 
