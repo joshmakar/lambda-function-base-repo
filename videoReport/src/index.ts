@@ -61,8 +61,6 @@ export async function handler(event?: VideoReportEvent) {
 
         const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)))
 
-        await indexDbConn.end()
-
         // Generate the CSV string (contents of a csv file) using csv-generate's sync API. If this data set ever gets huge, we'll need to use the callback or stream API.
         const csvString = stringify(rows, { header: true })
 
@@ -75,6 +73,8 @@ export async function handler(event?: VideoReportEvent) {
             Body: csvString
         }));
         const reportURL = `https://${reportBucket}.s3.amazonaws.com/${filePath}`;
+
+        await indexDbConn.end()
         return {
             reportURL,
             reportData: rows
