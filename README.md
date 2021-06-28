@@ -17,15 +17,22 @@ These reports can be executed via a scheduled job (using EventsBridge), a REST e
 
 ## Architecture
 ### Lambda Functions
+TODO
 
-## Reports
+### Directory Structure
+TODO
 
 ## Develop
-Install deps (`npm i`), then run `ts-node ./videoReport/test/main` to run a test file, (which invokes the Lambda entrypoint)
+1. Install `ts-node` globally (`npm i -g ts-node`)
+1. Add environment variables (`cp .env.example .env` and update the values)
+1. Install project deps (`cd videoReport; npm i`)
+1. Run (for example) `cd videoReport; ts-node ./test/noEmail` to run a test file, (which invokes the Lambda entrypoint)
+
 
 ## CI/CD
 TODO
 
-## "Deploying" to production
+### "Deploying" to production
+TODO
 
 ## Adding a new report
