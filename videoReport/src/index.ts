@@ -46,7 +46,7 @@ export async function handler(event?: VideoReportEvent) {
         user: process.env['UNOTIFI_COM_INDEX_DB_USER'],
         password: process.env['UNOTIFI_COM_INDEX_DB_PASS'],
         database: 'unotifi_com_index',
-        timeout: 660000
+        timeout: 60000
     });
 
     // I couldn't figure out how to paramaterize a WHERE IN array, so manually escape the array values
