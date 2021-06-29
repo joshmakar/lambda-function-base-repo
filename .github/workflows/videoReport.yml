@@ -31,12 +31,14 @@ jobs:
       - name: Install Dependencies
         run: npm i
 
+      # For some reason, the lambda step fails if there are symlinks in the artifact
       - name: Remove symlinks
         run: rm -rf node_modules/.bin
       
       - name: Typescript Compile
         run: npx tsc -p tsconfig-build.json
 
+      # Deploy build artifact zip file to AWS Lambda and create a new version
       - uses: appleboy/lambda-action@master
         with:
           aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
