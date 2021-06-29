@@ -46,14 +46,14 @@ export async function handler(event?: VideoReportEvent) {
         user: process.env['UNOTIFI_COM_INDEX_DB_USER'],
         password: process.env['UNOTIFI_COM_INDEX_DB_PASS'],
         database: 'unotifi_com_index',
-        timeout: 5000
+        timeout: 660000
     });
 
     // I couldn't figure out how to paramaterize a WHERE IN array, so manually escape the array values
     const safeDealerIds = event.dealerIDs.map(id => mysql.escape(id)).join(',')
     try {
         const dealerInfoResult = (await indexDbConn.query(`
-            SELECT dealer.iddealer, dealer.name as dealerName, database.name, database.user, database.password, databaseserver.IP FROM dealer 
+            SELECT dealer.iddealer, dealer.internal_code, dealer.name as dealerName, database.name, database.user, database.password, databaseserver.IP FROM dealer 
             INNER JOIN instance ON instance.idinstance = dealer.instance_idinstance
             INNER JOIN \`database\` ON database.iddatabase = instance.database_iddatabase
             INNER JOIN databaseserver ON databaseserver.iddatabaseserver = database.databaseServer_iddatabaseServer
@@ -130,34 +130,24 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
         user: dealerDbConnInfo.user || '',
         password: dealerDbConnInfo.password || '',
         database: dealerDbConnInfo.name || '',
-        timeout: 5000
+        timeout: 60000
     });
-
-    // This is just a placeholder function to run a simple aggregate query. In practice, we'll need one of these functions for each column of the report.
-    const countApptQuery = async (): Promise<number | undefined> => {
-        const countResult = await dealerDbConn.query(
-            `SELECT count(id) as count FROM auto_appointment WHERE appointment_date BETWEEN ? AND ?`,
-            [startDate, endDate]
-            // Typecasting here because mysql.query types don't allow you to pass in a type argument...
-        ) as { count: number }[]
-        return countResult && countResult[0] ? countResult[0].count : undefined;
-    }
 
     try {
         // Run each aggregate column query concurrently to save time.
         // Technically, mysql queries still run serially for a single connection, but it should at least put the burden of handling that
         // on a db server instead of this Node.js app.
         const [
-            roCountResult,
-            apptCountResult
+            closedROCount,
+            totalROsWithVideoCount
         ] = await Promise.all([
-            countROQuery(dealerDbConn, dealerDbConnInfo.iddealer, startDate, endDate),
-            countApptQuery()
+            countROQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
+            countROWithVideosQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
         ])
 
         // Assign all the db results to the CSV row
-        reportRow['Total # of Closed ROs (CP + WP)'] = roCountResult
-        reportRow['Appointment Count'] = apptCountResult
+        reportRow['Total # of Closed ROs (CP + WP)'] = closedROCount
+        reportRow['Number of ROs Containing AT LEAST one Tech Video'] = totalROsWithVideoCount
 
         // Don't forget to end the end the db connection for a single dealer!
         await dealerDbConn.end()
@@ -170,7 +160,6 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
     }
 }
 
-// This is just a placeholder function to run a simple aggregate query. In practice, we'll need one of these functions for each column of the report.
 async function countROQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
     // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
     const countResult: CountQueryResult = await conn.query(`
@@ -200,14 +189,53 @@ async function countROQuery(conn: mysql.Connection, dealerID: string, startDate:
                     1 = 1
                     AND COALESCE(auto_repair_order.technician_id, '') != ''
                     AND auto_repair_order.service_open_date BETWEEN ? AND ?
-                    AND auto_dealer.id = ?
+                    AND auto_dealer.integralink_code = ?
                 GROUP BY
                     auto_repair_order.id
             ) as aros
         `,
         [startDate, endDate, dealerID]
     );
-    console.log(countResult)
+    return countResult && countResult[0] ? countResult[0].count : undefined;
+}
+
+async function countROWithVideosQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
+    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
+    const countResult: CountQueryResult = await conn.query(`
+        SELECT
+            COUNT(*) AS count
+        FROM
+            (
+                SELECT
+                    auto_repair_order.id
+                FROM
+                    auto_dealer
+                    INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
+                    AND auto_custom_auto_dealer_c.deleted = 0
+                    INNER JOIN auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
+                    AND auto_customer.deleted = 0
+                    INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
+                    AND auto_vehicluto_customer_c.deleted = 0
+                    INNER JOIN auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
+                    AND auto_vehicle.deleted = 0
+                    INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
+                    AND auto_repairauto_vehicle_c.deleted = 0
+                    INNER JOIN auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
+                    AND auto_repair_order.deleted = 0
+                    INNER JOIN auto_ro_labrepair_order_c AS aro_lab_pivot ON aro_lab_pivot.auto_ro_laada9r_order_ida = auto_repair_order.id
+                    INNER JOIN auto_ro_labor AS labor ON aro_lab_pivot.auto_ro_la1301o_labor_idb = labor.id
+                WHERE
+                    1 = 1
+                    AND COALESCE(auto_repair_order.technician_id, '') != ''
+                    AND auto_repair_order.service_open_date BETWEEN ? AND ?
+                    AND auto_dealer.integralink_code = ?
+                    AND auto_repair_order.has_videos = 1
+                GROUP BY
+                    auto_repair_order.id
+            ) as aros
+        `,
+        [startDate, endDate, dealerID]
+    );
     return countResult && countResult[0] ? countResult[0].count : undefined;
 }
 
@@ -220,7 +248,7 @@ interface ReportRow {
     'Dealer Name'?: string;
     'Dealer ID'?: string;
     'Total # of Closed ROs (CP + WP)'?: number;
-    'Appointment Count'?: number
+    'Number of ROs Containing AT LEAST one Tech Video'?: number
 }
 
 /**
@@ -238,6 +266,7 @@ interface VideoReportEvent {
  */
 interface SelectDealerDbInfoResult {
     iddealer: string;
+    internal_code?: string;
     dealerName: string | null;
     name: string | null;
     user: string | null;
