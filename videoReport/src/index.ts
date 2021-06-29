@@ -11,7 +11,9 @@ const reportBucket = "unotifi-reports"
  * This is the entry point for the Lambda function
  */
 export async function handler(event?: VideoReportEvent) {
-    // test comment
+    if ('' == '') {
+        throw new Error('whoopsie')
+    }
     // Fore setting defaults and file upload name
     const todayYMD = (new Date()).toISOString().split('T')[0]!
 
