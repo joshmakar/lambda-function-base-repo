@@ -14,6 +14,7 @@ These reports can be executed via a scheduled job (using EventsBridge), a REST e
     * [Every Month, to Audi/Fred, with CSV/Email](https://us-east-1.console.aws.amazon.com/events/home?region=us-east-1#/rules/VideoReportMonthlyToAudi)
     * [Test - Every minute, no CSV/Email](https://us-east-1.console.aws.amazon.com/events/home?region=us-east-1#/rules/VideoReportNoEmailTest)
     * [Test - Every day, with CSV/Email](https://us-east-1.console.aws.amazon.com/events/home?region=us-east-1#/rules/VideoReportWithEmailTest)
+* [S3 Bucket path for report uploads](https://s3.console.aws.amazon.com/s3/buckets/unotifi-reports?region=us-east-1&prefix=video-report-3KCe4kZqXCkpZdp4/&showversions=false)
 
 ## Architecture
 ### Lambda Functions
