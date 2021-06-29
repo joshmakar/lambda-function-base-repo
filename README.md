@@ -59,6 +59,7 @@ If tests pass, the latest version can be "promoted" to production:
     * Security Group `sg-57729333`
     * Logs and Metrics enabled
     * Handler `build/index.handler`
+    * Timeout `5` minutes (or something reasonable for running reports)
 1. Set environment variables as needed from `.env`
 1. Merge code to `main` and let the code be deployed to the new Lambda by Github Actions
 1. [Test Lambda](#testing-new-changes)
