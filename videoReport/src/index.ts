@@ -134,15 +134,6 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
     });
 
     // This is just a placeholder function to run a simple aggregate query. In practice, we'll need one of these functions for each column of the report.
-    const countROQuery = async (): Promise<number | undefined> => {
-        const countResult = await dealerDbConn.query(
-            `SELECT count(id) as count FROM auto_repair_order WHERE service_closed_date BETWEEN ? AND ?`,
-            [startDate, endDate]
-            // Typecasting here because mysql.query types don't allow you to pass in a type argument...
-        ) as { count: number }[]
-        return countResult && countResult[0] ? countResult[0].count : undefined;
-    }
-    // This is just a placeholder function to run a simple aggregate query. In practice, we'll need one of these functions for each column of the report.
     const countApptQuery = async (): Promise<number | undefined> => {
         const countResult = await dealerDbConn.query(
             `SELECT count(id) as count FROM auto_appointment WHERE appointment_date BETWEEN ? AND ?`,
@@ -160,12 +151,12 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
             roCountResult,
             apptCountResult
         ] = await Promise.all([
-            countROQuery(),
+            countROQuery(dealerDbConn, dealerDbConnInfo.iddealer, startDate, endDate),
             countApptQuery()
         ])
 
         // Assign all the db results to the CSV row
-        reportRow['Repair Order Count'] = roCountResult
+        reportRow['Total # of Closed ROs (CP + WP)'] = roCountResult
         reportRow['Appointment Count'] = apptCountResult
 
         // Don't forget to end the end the db connection for a single dealer!
@@ -179,13 +170,56 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
     }
 }
 
+// This is just a placeholder function to run a simple aggregate query. In practice, we'll need one of these functions for each column of the report.
+async function countROQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
+    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
+    const countResult: CountQueryResult = await conn.query(`
+        SELECT
+            COUNT(*) AS count
+        FROM
+            (
+                SELECT
+                    auto_repair_order.id
+                FROM
+                    auto_dealer
+                    INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
+                    AND auto_custom_auto_dealer_c.deleted = 0
+                    INNER JOIN auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
+                    AND auto_customer.deleted = 0
+                    INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
+                    AND auto_vehicluto_customer_c.deleted = 0
+                    INNER JOIN auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
+                    AND auto_vehicle.deleted = 0
+                    INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
+                    AND auto_repairauto_vehicle_c.deleted = 0
+                    INNER JOIN auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
+                    AND auto_repair_order.deleted = 0
+                    INNER JOIN auto_ro_labrepair_order_c AS aro_lab_pivot ON aro_lab_pivot.auto_ro_laada9r_order_ida = auto_repair_order.id
+                    INNER JOIN auto_ro_labor AS labor ON aro_lab_pivot.auto_ro_la1301o_labor_idb = labor.id
+                WHERE
+                    1 = 1
+                    AND COALESCE(auto_repair_order.technician_id, '') != ''
+                    AND auto_repair_order.service_open_date BETWEEN ? AND ?
+                    AND auto_dealer.id = ?
+                GROUP BY
+                    auto_repair_order.id
+            ) as aros
+        `,
+        [startDate, endDate, dealerID]
+    );
+    console.log(countResult)
+    return countResult && countResult[0] ? countResult[0].count : undefined;
+}
+
+type CountQueryResult = { count: number }[]
+
 /**
  * Represents a row of the output CSV file
  */
 interface ReportRow {
     'Dealer Name'?: string;
     'Dealer ID'?: string;
-    'Repair Order Count'?: number;
+    'Total # of Closed ROs (CP + WP)'?: number;
     'Appointment Count'?: number
 }
 
