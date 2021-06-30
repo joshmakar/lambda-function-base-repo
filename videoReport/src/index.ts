@@ -143,6 +143,7 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
             avgLabor,
             avgParts,
             avgROClosed,
+            numberSMSSent,
             numberMediaSent,
         ] = await Promise.all([
             countROQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
@@ -150,6 +151,7 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
             avgLaborQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
             avgPartsQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
             avgROClosedQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
+            numberSMSSentQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
             numberMediaSentQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
         ])
 
@@ -159,6 +161,7 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
         reportRow['Average CP Labor $'] = avgLabor;
         reportRow['Average CP Parts $'] = avgParts;
         reportRow['Average RO Closed Value'] = avgROClosed;
+        reportRow['Number of SMSs Sent to Customer'] = numberSMSSent;
         reportRow['Number of Media Sent to Customer'] = numberMediaSent;
 
         // Don't forget to end the end the db connection for a single dealer!
@@ -381,6 +384,33 @@ async function avgROClosedQuery(conn: mysql.Connection, dealerID: string, startD
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
+async function numberSMSSentQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
+    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
+    const countResult: AggregateQueryResult = await conn.query(
+        `
+            SELECT
+                count(auto_event.id) as total
+            FROM
+                auto_event
+                INNER JOIN users ON auto_event.modified_user_id = users.id
+                INNER JOIN auto_contact_person ON auto_contact_person.user_id_c = users.id
+                    AND auto_contact_person.deleted = 0
+                LEFT JOIN auto_event_to_recipient_c ON auto_event_to_recipient_c.auto_eventfa83o_event_idb = auto_event.id
+                    AND auto_event_to_recipient_c.deleted = 0
+                INNER JOIN auto_contac_auto_dealer_c ON auto_contac_auto_dealer_c.auto_contaff8f_person_idb = auto_contact_person.id
+                    AND auto_contac_auto_dealer_c.deleted = 0
+                INNER JOIN auto_dealer ON auto_contac_auto_dealer_c.auto_contafb84_dealer_ida = auto_dealer.id
+                    AND auto_dealer.deleted = 0
+            WHERE
+                auto_event.type = 'Not-Pending'
+                AND auto_event.date_entered BETWEEN ? AND ?
+                AND integralink_code = ?
+        `,
+        [startDate, endDate, dealerID]
+    );
+    return countResult && countResult[0] ? countResult[0].total : undefined;
+}
+
 async function numberMediaSentQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
     // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
     const countResult: AggregateQueryResult = await conn.query(
@@ -422,6 +452,7 @@ interface ReportRow {
     'Average CP Labor $'?: number;
     'Average CP Parts $'?: number;
     'Average RO Closed Value'?: number;
+    'Number of SMSs Sent to Customer'?: number;
     'Number of Media Sent to Customer'?: number
 }
 
