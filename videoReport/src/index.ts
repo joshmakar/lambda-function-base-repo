@@ -1,44 +1,44 @@
 import * as mysql from 'promise-mysql';
-import stringify from 'csv-stringify/lib/sync'
+import stringify from 'csv-stringify/lib/sync';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import sendgrid from '@sendgrid/mail'
+import sendgrid from '@sendgrid/mail';
 import { v4 } from 'uuid';
 
 const s3Client = new S3Client({ region: 'us-east-1' });
-const reportBucket = "unotifi-reports"
+const reportBucket = "unotifi-reports";
 
 /**
  * This is the entry point for the Lambda function
  */
 export async function handler(event?: VideoReportEvent) {
     // Fore setting defaults and file upload name
-    const todayYMD = (new Date()).toISOString().split('T')[0]!
+    const todayYMD = (new Date()).toISOString().split('T')[0]!;
 
     // Set input defaults
     const startDateObj = new Date();
     startDateObj.setMonth(startDateObj.getMonth() - 1);
-    let startDateYMD = startDateObj.toISOString().split('T')[0]!
-    let endDateYMD = todayYMD
+    let startDateYMD = startDateObj.toISOString().split('T')[0]!;
+    let endDateYMD = todayYMD;
 
     // Sanitize date overrides
     if (event?.startDate) {
-        startDateYMD = new Date(event.startDate).toISOString().split('T')[0] || startDateYMD
+        startDateYMD = new Date(event.startDate).toISOString().split('T')[0] || startDateYMD;
     }
     if (event?.endDate) {
-        endDateYMD = new Date(event.endDate).toISOString().split('T')[0] || endDateYMD
+        endDateYMD = new Date(event.endDate).toISOString().split('T')[0] || endDateYMD;
     }
 
     // Check required input
     if (!event?.dealerIDs?.length) {
-        throw new Error('Missing dealerIDs in event body')
+        throw new Error('Missing dealerIDs in event body');
     }
 
     // Check required environment variables
     ['UNOTIFI_COM_INDEX_DB_HOST', 'UNOTIFI_COM_INDEX_DB_USER', 'UNOTIFI_COM_INDEX_DB_PASS', 'SENDGRID_API_KEY'].forEach(envVar => {
         if (!process.env[envVar]) {
-            throw new Error('Missing env var: ' + envVar)
+            throw new Error('Missing env var: ' + envVar);
         }
-    })
+    });
 
     // Connection for the Unotifi Index db to get the dealer db credentials
     const indexDbConn = await mysql.createConnection({
@@ -46,11 +46,12 @@ export async function handler(event?: VideoReportEvent) {
         user: process.env['UNOTIFI_COM_INDEX_DB_USER'],
         password: process.env['UNOTIFI_COM_INDEX_DB_PASS'],
         database: 'unotifi_com_index',
-        timeout: 60000
+        timeout: 60000,
     });
 
     // I couldn't figure out how to paramaterize a WHERE IN array, so manually escape the array values
-    const safeDealerIds = event.dealerIDs.map(id => mysql.escape(id)).join(',')
+    const safeDealerIds = event.dealerIDs.map(id => mysql.escape(id)).join(',');
+
     try {
         const dealerInfoResult = (await indexDbConn.query(`
             SELECT dealer.iddealer, dealer.internal_code, dealer.name as dealerName, database.name, database.user, database.password, databaseserver.IP FROM dealer 
@@ -60,16 +61,15 @@ export async function handler(event?: VideoReportEvent) {
             WHERE iddealer IN (${safeDealerIds})
         `)) as SelectDealerDbInfoResult[];
 
-        const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)))
+        const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)));
 
         // String if results are uploaded as a csv, null otherwise
         let reportURL: string | null = null;
-        console.log('josh is awesome, i donno');
 
         // If email recipients are set, create a csv, upload it to s3, and email a link to the recipients
         if (event.emailRecipients?.length) {
             // Generate the CSV string (contents of a csv file) using csv-generate's sync API. If this data set ever gets huge, we'll need to use the callback or stream API.
-            const csvString = stringify(rows, { header: true })
+            const csvString = stringify(rows, { header: true });
 
             // Upload that bad boy to S3
             // I just appended a random string in the top level folder name for a bit more obfuscation
@@ -77,11 +77,11 @@ export async function handler(event?: VideoReportEvent) {
             await s3Client.send(new PutObjectCommand({
                 Bucket: reportBucket,
                 Key: filePath,
-                Body: csvString
+                Body: csvString,
             }));
             reportURL = `https://${reportBucket}.s3.amazonaws.com/${filePath}`;
 
-            sendgrid.setApiKey(process.env['SENDGRID_API_KEY'] + '')
+            sendgrid.setApiKey(process.env['SENDGRID_API_KEY'] + '');
             await sendgrid.send({
                 to: event.emailRecipients,
                 from: 'donotreply@unotifi.com',
@@ -104,15 +104,15 @@ export async function handler(event?: VideoReportEvent) {
             });
         }
 
-        await indexDbConn.end()
         return {
             reportURL,
-            reportData: rows
+            reportData: rows,
         };
     } catch (err) {
+        throw err;
+    } finally {
         // Close the db connection, even if there's an error. This avoids a hanging process.
-        await indexDbConn.end()
-        throw err
+        await indexDbConn.end();
     }
 };
 
@@ -122,7 +122,7 @@ export async function handler(event?: VideoReportEvent) {
 async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult, startDate: string, endDate: string): Promise<ReportRow> {
     const reportRow: ReportRow = {
         'Dealer ID': dealerDbConnInfo.iddealer,
-        'Dealer Name': dealerDbConnInfo.dealerName || ''
+        'Dealer Name': dealerDbConnInfo.dealerName || '',
     };
 
     // Connection to the dealer database (aka sugarcrm database) for subsequent aggregate queries
@@ -131,7 +131,7 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
         user: dealerDbConnInfo.user || '',
         password: dealerDbConnInfo.password || '',
         database: dealerDbConnInfo.name || '',
-        timeout: 60000
+        timeout: 60000,
     });
 
     try {
@@ -143,7 +143,7 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
             totalROsWithVideoCount,
             avgLabor,
             avgParts,
-            avgROClosed
+            avgROClosed,
         ] = await Promise.all([
             countROQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
             countROWithVideosQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
@@ -153,20 +153,18 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
         ])
 
         // Assign all the db results to the CSV row
-        reportRow['Total # of Closed ROs (CP + WP)'] = closedROCount
-        reportRow['Number of ROs Containing AT LEAST one Tech Video'] = totalROsWithVideoCount
+        reportRow['Total # of Closed ROs (CP + WP)'] = closedROCount;
+        reportRow['Number of ROs Containing AT LEAST one Tech Video'] = totalROsWithVideoCount;
         reportRow['Average CP Labor $'] = avgLabor;
         reportRow['Average CP Parts $'] = avgParts;
         reportRow['Average RO Closed Value'] = avgROClosed;
 
-        // Don't forget to end the end the db connection for a single dealer!
-        await dealerDbConn.end()
-
-        return reportRow
+        return reportRow;
     } catch (err) {
+        throw err;
+    } finally {
         // Close the db connection, even if there's an error. This avoids a hanging process.
-        await dealerDbConn.end()
-        throw err
+        await dealerDbConn.end();
     }
 }
 
@@ -206,6 +204,7 @@ async function countROQuery(conn: mysql.Connection, dealerID: string, startDate:
         `,
         [startDate, endDate, dealerID]
     );
+
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
@@ -246,6 +245,7 @@ async function countROWithVideosQuery(conn: mysql.Connection, dealerID: string, 
         `,
         [startDate, endDate, dealerID]
     );
+
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
@@ -285,6 +285,7 @@ async function avgLaborQuery(conn: mysql.Connection, dealerID: string, startDate
         `,
         [startDate, endDate, dealerID]
     );
+
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
@@ -335,6 +336,7 @@ async function avgPartsQuery(conn: mysql.Connection, dealerID: string, startDate
         `,
         [startDate, endDate, dealerID]
     );
+
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
@@ -376,10 +378,11 @@ async function avgROClosedQuery(conn: mysql.Connection, dealerID: string, startD
         `,
         [startDate, endDate, dealerID]
     );
+
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
-type AggregateQueryResult = { total: number }[]
+type AggregateQueryResult = { total: number }[];
 
 /**
  * Represents a row of the output CSV file
@@ -388,7 +391,7 @@ interface ReportRow {
     'Dealer Name'?: string;
     'Dealer ID'?: string;
     'Total # of Closed ROs (CP + WP)'?: number;
-    'Number of ROs Containing AT LEAST one Tech Video'?: number
+    'Number of ROs Containing AT LEAST one Tech Video'?: number;
     'Average CP Labor $'?: number;
     'Average CP Parts $'?: number;
     'Average RO Closed Value'?: number;
@@ -398,10 +401,10 @@ interface ReportRow {
  * JSON input of the lambda function
  */
 interface VideoReportEvent {
-    dealerIDs?: string[],
-    emailRecipients?: string[],
-    startDate?: string,
-    endDate?: string
+    dealerIDs?: string[];
+    emailRecipients?: string[];
+    startDate?: string;
+    endDate?: string;
 }
 
 /**
