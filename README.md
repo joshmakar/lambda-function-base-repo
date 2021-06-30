@@ -17,13 +17,13 @@ These reports can be executed via a scheduled job (using EventsBridge), a REST e
 * [S3 Bucket path for report uploads](https://s3.console.aws.amazon.com/s3/buckets/unotifi-reports?region=us-east-1&prefix=video-report-3KCe4kZqXCkpZdp4/&showversions=false)
 
 ## Directory Structure
-`.github/workflows` - contains Github Actions config files for CI/Deployments. There should be one file per report
-`.env.example` - `dotenv` input example that should be copied to `.env` when developing locally
-`tsconfig.json` - Typescript base configuration with common settings reused by each report's `tsconfig-build.json`
-`{report name}/build` - build output from Typescript transpilation, and used as the Lambda entry point
-`{report name}/src` - Typescript files to be transpiled to `{report name}/build` during CI
-`{report name}/test` - files for local development that invoke the Lambda entry point in `src`
-`{report name}/tsconfig-build.json` - Typescript configuration specific to the report directory
+`.github/workflows` - contains Github Actions config files for CI/Deployments. There should be one file per report  
+`.env.example` - `dotenv` input example that should be copied to `.env` when developing locally  
+`tsconfig.json` - Typescript base configuration with common settings reused by each report's `tsconfig-build.json`  
+`{report name}/build` - build output from Typescript transpilation, and used as the Lambda entry point  
+`{report name}/src` - Typescript files to be transpiled to `{report name}/build` during CI  
+`{report name}/test` - files for local development that invoke the Lambda entry point in `src`  
+`{report name}/tsconfig-build.json` - Typescript configuration specific to the report directory  
 
 ## Develop
 1. Install Node.js 14+ (you can use nvm or the normal package installer)
