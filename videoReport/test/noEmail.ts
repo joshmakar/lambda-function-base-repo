@@ -1,8 +1,8 @@
-import { config } from 'dotenv'
-import { handler } from '../src/index'
+import { config } from 'dotenv';
+import { handler } from '../src/index';
 
 // Load env vars from .env
-config({ path: __dirname + '/../../.env' })
+config({ path: __dirname + '/../../.env' });
 
 const dealerIds = [
     "bdc52a27-09d9-0384-f719-5744655473c3",
@@ -11,4 +11,4 @@ const dealerIds = [
 
 // Invoke the lambda entrypoint for Parker Audi and Audi North Park
 handler({ dealerIDs: dealerIds })
-    .then(resp => console.log('Lambda fn completed with response:', resp))
+    .then(resp => console.log('Lambda fn completed with response:', resp));
