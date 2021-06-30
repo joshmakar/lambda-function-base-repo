@@ -64,6 +64,7 @@ export async function handler(event?: VideoReportEvent) {
 
         // String if results are uploaded as a csv, null otherwise
         let reportURL: string | null = null;
+        console.log('josh is awesome, i donno');
 
         // If email recipients are set, create a csv, upload it to s3, and email a link to the recipients
         if (event.emailRecipients?.length) {
