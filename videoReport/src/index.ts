@@ -148,6 +148,7 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
             numberOptedOutROs,
             numberSMSSent,
             numberMediaSent,
+            averageSmsResponseTimeInSeconds,
         ] = await Promise.all([
             countROQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
             countROWithVideosQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
@@ -158,6 +159,7 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
             numberOptedOutROsQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
             numberSMSSentQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
             numberMediaSentQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
+            getAverageSmsResponseTimeInSeconds(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
         ])
 
         // Assign all the db results to the CSV row
@@ -170,6 +172,7 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
         reportRow['Number of Opted Out ROs'] = numberOptedOutROs;
         reportRow['Number of SMSs Sent to Customer'] = numberSMSSent;
         reportRow['Number of Media Sent to Customer'] = numberMediaSent;
+        reportRow['Average SMS Response Time in Seconds'] = averageSmsResponseTimeInSeconds;
 
         return reportRow;
     } catch (err) {
@@ -398,9 +401,9 @@ async function numberOptedInROsQuery(conn: mysql.Connection, dealerID: string, s
     // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
     const countResult: AggregateQueryResult = await conn.query(
         `
-        SELECT 
+        SELECT
             count(auto_repair_order.id) as total
-        FROM auto_repair_order              
+        FROM auto_repair_order
             INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
                 AND auto_repair_order.deleted = 0
             INNER JOIN auto_vehicle ON auto_vehicle.id = auto_repairauto_vehicle_c.auto_repai4169vehicle_ida
@@ -408,12 +411,12 @@ async function numberOptedInROsQuery(conn: mysql.Connection, dealerID: string, s
             INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
                 AND auto_vehicle.deleted = 0
             INNER JOIN auto_customer ON auto_customer.id = auto_vehicluto_customer_c.auto_vehic9275ustomer_ida
-                AND auto_vehicluto_customer_c.deleted = 0		
+                AND auto_vehicluto_customer_c.deleted = 0
             INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
                 AND auto_customer.deleted = 0
             INNER JOIN auto_dealer ON auto_dealer.id = auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida
                 AND auto_custom_auto_dealer_c.deleted = 0
-        WHERE 
+        WHERE
             auto_customer.do_not_text_flag = 0
             AND auto_repair_order.service_open_date BETWEEN '2021-06-01' AND '2021-07-01'
             AND auto_dealer.integralink_code = '425C24'
@@ -427,9 +430,9 @@ async function numberOptedOutROsQuery(conn: mysql.Connection, dealerID: string, 
     // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
     const countResult: AggregateQueryResult = await conn.query(
         `
-        SELECT 
+        SELECT
             count(auto_repair_order.id) as total
-        FROM auto_repair_order              
+        FROM auto_repair_order
             INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
                 AND auto_repair_order.deleted = 0
             INNER JOIN auto_vehicle ON auto_vehicle.id = auto_repairauto_vehicle_c.auto_repai4169vehicle_ida
@@ -442,7 +445,7 @@ async function numberOptedOutROsQuery(conn: mysql.Connection, dealerID: string, 
                 AND auto_customer.deleted = 0
             INNER JOIN auto_dealer ON auto_dealer.id = auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida
                 AND auto_custom_auto_dealer_c.deleted = 0
-        WHERE 
+        WHERE
             auto_customer.do_not_text_flag = 1
             AND auto_repair_order.service_open_date BETWEEN '2021-06-01' AND '2021-07-01'
             AND auto_dealer.integralink_code = '425C24'
@@ -507,7 +510,95 @@ async function numberMediaSentQuery(conn: mysql.Connection, dealerID: string, st
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
-type AggregateQueryResult = { total: number }[]
+async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
+    const textEvents: textEvents = await conn.query(
+        `
+            SELECT
+                auto_event.id AS eventId,
+                auto_event.sent_date AS eventSentDate,
+                auto_event.type AS eventType,
+                auto_event.generated_from AS eventGeneratedFrom,
+                auto_event_to_recipient_c.auto_eventa735cipient_ida AS recipientId
+            FROM
+                auto_event
+                INNER JOIN auto_event_to_recipient_c ON auto_event.id = auto_event_to_recipient_c.auto_eventfa83o_event_idb
+                AND auto_event_to_recipient_c.deleted = 0
+            WHERE
+                auto_event.sent_date BETWEEN ?
+                AND ?
+                AND auto_event.body_type = 'Text'
+                AND (
+                    (
+                        auto_event.generated_from = 'Comunicator'
+                        AND auto_event.type = 'Not-Pending'
+                    )
+                    OR (
+                        auto_event.generated_from = 'Reply'
+                        AND auto_event.type = 'Reply'
+                    )
+                    OR (
+                        auto_event.generated_from = 'System'
+                        AND auto_event.type = 'Not-Pending'
+                    )
+                )
+                AND auto_event.dealer_number = ?
+            ORDER BY
+                eventSentDate
+        `,
+        [startDate, endDate, dealerID]
+    );
+
+    const outboundTextEvents: { [key: string]: any } = {};
+    const inboundTextEvents: { [key: string]: any } = {};
+    const responseTimesInSeconds: number[] = [];
+
+    // Process the text events in order to find the average response time
+    textEvents.forEach(textEvent => {
+        const recipientId = textEvent.recipientId ?? '';
+
+        // Find outbound text events
+        if (textEvent.eventGeneratedFrom == 'Comunicator' && textEvent.eventType == 'Not-Pending') {
+            outboundTextEvents[recipientId] = textEvent.eventSentDate;
+        }
+
+        // Find inbound text events
+        if (textEvent.eventGeneratedFrom == 'Reply' && textEvent.eventType == 'Reply') {
+            inboundTextEvents[recipientId] = textEvent.eventSentDate;
+        }
+
+        // Calculate response times
+        if (outboundTextEvents[recipientId] && inboundTextEvents[recipientId]) {
+            const outboundTextEventDate = new Date(outboundTextEvents[recipientId]);
+            const inboundTextEventDate = new Date(inboundTextEvents[recipientId]);
+
+            responseTimesInSeconds.push(getDateDifferenceInSeconds(outboundTextEventDate, inboundTextEventDate));
+        }
+    });
+
+    return responseTimesInSeconds.length ? average(responseTimesInSeconds) : null;
+}
+
+
+/////////////////////////////////////////////////
+// Types
+/////////////////////////////////////////////////
+
+// Aggregate Query Result
+type AggregateQueryResult = { total: number }[];
+
+// Average Response Time Result
+type textEvents = {
+    eventId: string
+    eventSentDate: string
+    eventType: string
+    eventGeneratedFrom: string
+    recipientId: string
+}[];
+
+
+/////////////////////////////////////////////////
+// Interfaces
+/////////////////////////////////////////////////
 
 /**
  * Represents a row of the output CSV file
@@ -523,7 +614,8 @@ interface ReportRow {
     'Number of Opted In ROs'?: number;
     'Number of Opted Out ROs'?: number;
     'Number of SMSs Sent to Customer'?: number;
-    'Number of Media Sent to Customer'?: number
+    'Number of Media Sent to Customer'?: number;
+    'Average SMS Response Time in Seconds'?: number | null;
 }
 
 /**
@@ -547,4 +639,27 @@ interface SelectDealerDbInfoResult {
     user: string | null;
     password: string | null;
     IP: string | null;
+}
+
+
+/////////////////////////////////////////////////
+// Helper Functions
+/////////////////////////////////////////////////
+
+/**
+ * Average
+ * @param array An array of numbers to calculate the average
+ * @returns The average value of the numbers provided
+ */
+const average = (array: number[]): number => array.reduce((a, b) => a + b) / array.length;
+
+/**
+ * Get Date Difference in Seconds
+ * @param startDate 
+ * @param endDate 
+ * @returns Returns difference between two dates in seconds rounded to the nearest whole number
+ */
+const getDateDifferenceInSeconds = (startDate: any, endDate: any): number => {
+    const diffInMs = Math.round(Math.abs(endDate - startDate));
+    return diffInMs / 1000;
 }
