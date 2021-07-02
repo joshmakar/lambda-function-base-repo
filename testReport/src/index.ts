@@ -7,7 +7,7 @@ export async function handler(event: {}) {
         "headers": {
             "my_header": "my_value"
         },
-        "body": JSON.stringifyBREAK({ message: 'Hello World' }),
+        "body": JSON.stringify({ message: 'Hello BUG' }),
         "isBase64Encoded": false
     };
 
