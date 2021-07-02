@@ -26,11 +26,11 @@ These reports can be executed via a scheduled job (using EventsBridge), a REST e
 `{report name}/tsconfig-build.json` - Typescript configuration specific to the report directory  
 
 ## Develop
-1. Install Node.js 14+ (you can use nvm or the normal package installer)
-1. Install `ts-node` globally (`npm i -g ts-node`)
-1. Add environment variables (`cp .env.example .env` and update the values)
-1. Install project deps (`cd {report name}; npm i`)
-1. Run (for example) `cd {report name}; ts-node ./test/noEmail` to run a test file, (which invokes the Lambda entrypoint)
+1. Install Node.js 14+ (you can use nvm or the normal package installer).
+1. Install `ts-node` globally (`npm i -g ts-node`).
+1. Add environment variables (`cp .env.example .env` and update the values).
+1. Install project deps (`cd {report name}; npm i`).
+1. Run (for example) `cd {report name}; ts-node ./test/noEmail` to run a test file, (which invokes the Lambda entrypoint).
 
 ## CI/CD
 When changes are merged into the `main` branch, a new CI build should automatically run in [Github Actions](https://github.com/PerfectDayLLC/lambda-reports/actions) for the changed report(s). The build process will typically compile the Typescript and upload the build artifact .zip file to Lambda. Configuration for build steps (aka workflows) are housed in the yaml files within the `.github/workflows` directory of this repo.
@@ -43,25 +43,29 @@ After CI runs and a new version of the Lambda is created, you can test the funct
 
 ### Promoting to production
 If tests pass, the latest version can be "promoted" to production:
-1. From the Lambda details page, select the Aliases tab
-1. Click Production, then click Edit button
+1. From the Lambda details page, select the Aliases tab.
+1. Click Production, then click Edit button.
 1. Select the desired version (probably the most recent version with the highest number) and save. **DO NOT** select `$LATEST` for the `Production` alias, or you'll automatically deploy all changes from the main branch to production!
 
 ## Adding a new report
-1. Copy code from `{report name}` to `{new report name}` and update code as needed
-1. Copy `.github/workflows/{report name}` to `.github/workflows/{report name}` and update names
-1. Develop MVP locally
-1. Create a new Lambda Function (from scratch) and set the following non-default configurations:
+1. Copy relavent code from `{report name}` to `{new report name}` and update code as needed. Don't copy _node_modules_ or _package-lock.json_.
+1. Update the package.json file:
+    * Update the name property to something like _lambda-reports_report-name.
+    * Add/Remove/Update any dependencies as necessary.
+1. Copy `.github/workflows/{report name}` to `.github/workflows/{report name}` and update names.
+1. Develop <abbr title="Minimum Viable Product">MVP</abbr> locally.
+1. Create a new Lambda Function (Author from scratch) in AWS and set the following non-default configurations:
+    * Function name should be PascalCase and named relavent to the report.
     * Runtime `Node.js 14.x`
     * Execution Role `videoReportStaging-role-9lvmb7ht`
-    * VPC `vpc-f368e696`
-    * Subnets `subnet-02ab519a992cffd03` and `subnet-04ab02af5bfdcd515`
-    * Security Group `sg-57729333`
-    * Logs and Metrics enabled
-    * Handler `build/index.handler`
-    * Timeout `5` minutes (or something reasonable for running reports)
-1. Set environment variables as needed from `.env`
-1. Merge code to `main` and let the code be deployed to the new Lambda by Github Actions
-1. [Test Lambda](#testing-new-changes)
-1. Create a `Production` alias and [point it to the most recent version](#promoting-to-production)
-1. Create a Trigger for the Lambda using CloudWatch Events (for scheduled runs) and/or API Gateway (for REST endpoint). Update the JSON payload of the trigger, and ensure that the trigger is pointed to the `Production` alias`
+    * Advanced Settings:
+        * VPC `vpc-f368e696`
+        * Subnets `subnet-02ab519a992cffd03` and `subnet-04ab02af5bfdcd515`
+        * Security Group `sg-57729333`
+    * Update Runtime settings Handler on the _Code_ tab from `index.handler` to `build/index.handler`.
+    * Update the timeout setting under the _General configuration_ settings to `5` minutes (or something reasonable for running reports).
+    * Add environment variables as needed under the _Environment variables_ settings.
+1. Merge code to `main` branch in GitHub and let the code be deployed to the new Lambda by Github Actions.
+1. [Test Lambda](#testing-new-changes).
+1. Create a `Production` alias in the Lambda Function and [point it to the most recent version](#promoting-to-production).
+1. Create a Trigger for the Lambda using CloudWatch Events (for scheduled runs) and/or API Gateway (for REST endpoint). Update the JSON payload of the trigger, and ensure that the trigger is pointed to the `Production` alias`.
