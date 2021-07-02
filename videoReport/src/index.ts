@@ -548,8 +548,8 @@ async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealer
         [startDate, endDate, dealerID]
     );
 
-    const outboundTextEvents: { [key: string]: any } = {};
-    const inboundTextEvents: { [key: string]: any } = {};
+    const outboundTextEvents: { [key: string]: string } = {};
+    const inboundTextEvents: { [key: string]: string } = {};
     const responseTimesInSeconds: number[] = [];
 
     // Process the text events in order to find the average response time
@@ -568,8 +568,8 @@ async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealer
 
         // Calculate response times
         if (outboundTextEvents[recipientId] && inboundTextEvents[recipientId]) {
-            const outboundTextEventDate = new Date(outboundTextEvents[recipientId]);
-            const inboundTextEventDate = new Date(inboundTextEvents[recipientId]);
+            const outboundTextEventDate = new Date(outboundTextEvents[recipientId]!);
+            const inboundTextEventDate = new Date(inboundTextEvents[recipientId]!);
 
             responseTimesInSeconds.push(getDateDifferenceInSeconds(outboundTextEventDate, inboundTextEventDate));
         }
