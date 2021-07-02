@@ -511,7 +511,7 @@ async function numberMediaSentQuery(conn: mysql.Connection, dealerID: string, st
 }
 
 async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
-    const textEvents: textEvents = await conn.query(
+    const textEvents: TextEvents = await conn.query(
         `
             SELECT
                 auto_event.id AS eventId,
@@ -587,7 +587,7 @@ async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealer
 type AggregateQueryResult = { total: number }[];
 
 // Average Response Time Result
-type textEvents = {
+type TextEvents = {
     eventId: string
     eventSentDate: string
     eventType: string
