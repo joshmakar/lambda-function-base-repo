@@ -1,44 +1,44 @@
 import * as mysql from 'promise-mysql';
-import stringify from 'csv-stringify/lib/sync'
+import stringify from 'csv-stringify/lib/sync';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import sendgrid from '@sendgrid/mail'
+import sendgrid from '@sendgrid/mail';
 import { v4 } from 'uuid';
 
 const s3Client = new S3Client({ region: 'us-east-1' });
-const reportBucket = "unotifi-reports"
+const reportBucket = "unotifi-reports";
 
 /**
  * This is the entry point for the Lambda function
  */
 export async function handler(event?: VideoReportEvent) {
     // Fore setting defaults and file upload name
-    const todayYMD = (new Date()).toISOString().split('T')[0]!
+    const todayYMD = (new Date()).toISOString().split('T')[0]!;
 
     // Set input defaults
     const startDateObj = new Date();
     startDateObj.setMonth(startDateObj.getMonth() - 1);
-    let startDateYMD = startDateObj.toISOString().split('T')[0]!
-    let endDateYMD = todayYMD
+    let startDateYMD = startDateObj.toISOString().split('T')[0]!;
+    let endDateYMD = todayYMD;
 
     // Sanitize date overrides
     if (event?.startDate) {
-        startDateYMD = new Date(event.startDate).toISOString().split('T')[0] || startDateYMD
+        startDateYMD = new Date(event.startDate).toISOString().split('T')[0] || startDateYMD;
     }
     if (event?.endDate) {
-        endDateYMD = new Date(event.endDate).toISOString().split('T')[0] || endDateYMD
+        endDateYMD = new Date(event.endDate).toISOString().split('T')[0] || endDateYMD;
     }
 
     // Check required input
     if (!event?.dealerIDs?.length) {
-        throw new Error('Missing dealerIDs in event body')
+        throw new Error('Missing dealerIDs in event body');
     }
 
     // Check required environment variables
     ['UNOTIFI_COM_INDEX_DB_HOST', 'UNOTIFI_COM_INDEX_DB_USER', 'UNOTIFI_COM_INDEX_DB_PASS', 'SENDGRID_API_KEY'].forEach(envVar => {
         if (!process.env[envVar]) {
-            throw new Error('Missing env var: ' + envVar)
+            throw new Error('Missing env var: ' + envVar);
         }
-    })
+    });
 
     // Connection for the Unotifi Index db to get the dealer db credentials
     const indexDbConn = await mysql.createConnection({
@@ -46,11 +46,12 @@ export async function handler(event?: VideoReportEvent) {
         user: process.env['UNOTIFI_COM_INDEX_DB_USER'],
         password: process.env['UNOTIFI_COM_INDEX_DB_PASS'],
         database: 'unotifi_com_index',
-        timeout: 60000
+        timeout: 60000,
     });
 
     // I couldn't figure out how to paramaterize a WHERE IN array, so manually escape the array values
-    const safeDealerIds = event.dealerIDs.map(id => mysql.escape(id)).join(',')
+    const safeDealerIds = event.dealerIDs.map(id => mysql.escape(id)).join(',');
+
     try {
         const dealerInfoResult = (await indexDbConn.query(`
             SELECT dealer.iddealer, dealer.internal_code, dealer.name as dealerName, database.name, database.user, database.password, databaseserver.IP FROM dealer 
@@ -60,16 +61,15 @@ export async function handler(event?: VideoReportEvent) {
             WHERE iddealer IN (${safeDealerIds})
         `)) as SelectDealerDbInfoResult[];
 
-        const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)))
+        const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)));
 
         // String if results are uploaded as a csv, null otherwise
         let reportURL: string | null = null;
-        console.log('josh is awesome, i donno');
 
         // If email recipients are set, create a csv, upload it to s3, and email a link to the recipients
         if (event.emailRecipients?.length) {
             // Generate the CSV string (contents of a csv file) using csv-generate's sync API. If this data set ever gets huge, we'll need to use the callback or stream API.
-            const csvString = stringify(rows, { header: true })
+            const csvString = stringify(rows, { header: true });
 
             // Upload that bad boy to S3
             // I just appended a random string in the top level folder name for a bit more obfuscation
@@ -77,11 +77,11 @@ export async function handler(event?: VideoReportEvent) {
             await s3Client.send(new PutObjectCommand({
                 Bucket: reportBucket,
                 Key: filePath,
-                Body: csvString
+                Body: csvString,
             }));
             reportURL = `https://${reportBucket}.s3.amazonaws.com/${filePath}`;
 
-            sendgrid.setApiKey(process.env['SENDGRID_API_KEY'] + '')
+            sendgrid.setApiKey(process.env['SENDGRID_API_KEY'] + '');
             await sendgrid.send({
                 to: event.emailRecipients,
                 from: 'donotreply@unotifi.com',
@@ -104,15 +104,15 @@ export async function handler(event?: VideoReportEvent) {
             });
         }
 
-        await indexDbConn.end()
         return {
             reportURL,
-            reportData: rows
+            reportData: rows,
         };
     } catch (err) {
+        throw err;
+    } finally {
         // Close the db connection, even if there's an error. This avoids a hanging process.
-        await indexDbConn.end()
-        throw err
+        await indexDbConn.end();
     }
 };
 
@@ -122,7 +122,7 @@ export async function handler(event?: VideoReportEvent) {
 async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult, startDate: string, endDate: string): Promise<ReportRow> {
     const reportRow: ReportRow = {
         'Dealer ID': dealerDbConnInfo.iddealer,
-        'Dealer Name': dealerDbConnInfo.dealerName || ''
+        'Dealer Name': dealerDbConnInfo.dealerName || '',
     };
 
     // Connection to the dealer database (aka sugarcrm database) for subsequent aggregate queries
@@ -131,7 +131,7 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
         user: dealerDbConnInfo.user || '',
         password: dealerDbConnInfo.password || '',
         database: dealerDbConnInfo.name || '',
-        timeout: 60000
+        timeout: 60000,
     });
 
     try {
@@ -148,6 +148,7 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
             numberOptedOutROs,
             numberSMSSent,
             numberMediaSent,
+            averageSmsResponseTimeInSeconds,
         ] = await Promise.all([
             countROQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
             countROWithVideosQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
@@ -158,11 +159,12 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
             numberOptedOutROsQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
             numberSMSSentQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
             numberMediaSentQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
+            getAverageSmsResponseTimeInSeconds(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
         ])
 
         // Assign all the db results to the CSV row
-        reportRow['Total # of Closed ROs (CP + WP)'] = closedROCount
-        reportRow['Number of ROs Containing AT LEAST one Tech Video'] = totalROsWithVideoCount
+        reportRow['Total # of Closed ROs (CP + WP)'] = closedROCount;
+        reportRow['Number of ROs Containing AT LEAST one Tech Video'] = totalROsWithVideoCount;
         reportRow['Average CP Labor $'] = avgLabor;
         reportRow['Average CP Parts $'] = avgParts;
         reportRow['Average RO Closed Value'] = avgROClosed;
@@ -170,15 +172,14 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
         reportRow['Number of Opted Out ROs'] = numberOptedOutROs;
         reportRow['Number of SMSs Sent to Customer'] = numberSMSSent;
         reportRow['Number of Media Sent to Customer'] = numberMediaSent;
+        reportRow['Average SMS Response Time in Seconds'] = averageSmsResponseTimeInSeconds;
 
-        // Don't forget to end the end the db connection for a single dealer!
-        await dealerDbConn.end()
-
-        return reportRow
+        return reportRow;
     } catch (err) {
+        throw err;
+    } finally {
         // Close the db connection, even if there's an error. This avoids a hanging process.
-        await dealerDbConn.end()
-        throw err
+        await dealerDbConn.end();
     }
 }
 
@@ -218,6 +219,7 @@ async function countROQuery(conn: mysql.Connection, dealerID: string, startDate:
         `,
         [startDate, endDate, dealerID]
     );
+
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
@@ -258,6 +260,7 @@ async function countROWithVideosQuery(conn: mysql.Connection, dealerID: string, 
         `,
         [startDate, endDate, dealerID]
     );
+
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
@@ -297,6 +300,7 @@ async function avgLaborQuery(conn: mysql.Connection, dealerID: string, startDate
         `,
         [startDate, endDate, dealerID]
     );
+
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
@@ -347,6 +351,7 @@ async function avgPartsQuery(conn: mysql.Connection, dealerID: string, startDate
         `,
         [startDate, endDate, dealerID]
     );
+
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
@@ -388,6 +393,7 @@ async function avgROClosedQuery(conn: mysql.Connection, dealerID: string, startD
         `,
         [startDate, endDate, dealerID]
     );
+
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
@@ -395,9 +401,9 @@ async function numberOptedInROsQuery(conn: mysql.Connection, dealerID: string, s
     // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
     const countResult: AggregateQueryResult = await conn.query(
         `
-        SELECT 
+        SELECT
             count(auto_repair_order.id) as total
-        FROM auto_repair_order              
+        FROM auto_repair_order
             INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
                 AND auto_repair_order.deleted = 0
             INNER JOIN auto_vehicle ON auto_vehicle.id = auto_repairauto_vehicle_c.auto_repai4169vehicle_ida
@@ -405,12 +411,12 @@ async function numberOptedInROsQuery(conn: mysql.Connection, dealerID: string, s
             INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
                 AND auto_vehicle.deleted = 0
             INNER JOIN auto_customer ON auto_customer.id = auto_vehicluto_customer_c.auto_vehic9275ustomer_ida
-                AND auto_vehicluto_customer_c.deleted = 0		
+                AND auto_vehicluto_customer_c.deleted = 0
             INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
                 AND auto_customer.deleted = 0
             INNER JOIN auto_dealer ON auto_dealer.id = auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida
                 AND auto_custom_auto_dealer_c.deleted = 0
-        WHERE 
+        WHERE
             auto_customer.do_not_text_flag = 0
             AND auto_repair_order.service_open_date BETWEEN '2021-06-01' AND '2021-07-01'
             AND auto_dealer.integralink_code = '425C24'
@@ -424,9 +430,9 @@ async function numberOptedOutROsQuery(conn: mysql.Connection, dealerID: string, 
     // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
     const countResult: AggregateQueryResult = await conn.query(
         `
-        SELECT 
+        SELECT
             count(auto_repair_order.id) as total
-        FROM auto_repair_order              
+        FROM auto_repair_order
             INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
                 AND auto_repair_order.deleted = 0
             INNER JOIN auto_vehicle ON auto_vehicle.id = auto_repairauto_vehicle_c.auto_repai4169vehicle_ida
@@ -439,7 +445,7 @@ async function numberOptedOutROsQuery(conn: mysql.Connection, dealerID: string, 
                 AND auto_customer.deleted = 0
             INNER JOIN auto_dealer ON auto_dealer.id = auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida
                 AND auto_custom_auto_dealer_c.deleted = 0
-        WHERE 
+        WHERE
             auto_customer.do_not_text_flag = 1
             AND auto_repair_order.service_open_date BETWEEN '2021-06-01' AND '2021-07-01'
             AND auto_dealer.integralink_code = '425C24'
@@ -504,7 +510,95 @@ async function numberMediaSentQuery(conn: mysql.Connection, dealerID: string, st
     return countResult && countResult[0] ? countResult[0].total : undefined;
 }
 
-type AggregateQueryResult = { total: number }[]
+async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
+    const textEvents: TextEvents = await conn.query(
+        `
+            SELECT
+                auto_event.id AS eventId,
+                auto_event.sent_date AS eventSentDate,
+                auto_event.type AS eventType,
+                auto_event.generated_from AS eventGeneratedFrom,
+                auto_event_to_recipient_c.auto_eventa735cipient_ida AS recipientId
+            FROM
+                auto_event
+                INNER JOIN auto_event_to_recipient_c ON auto_event.id = auto_event_to_recipient_c.auto_eventfa83o_event_idb
+                AND auto_event_to_recipient_c.deleted = 0
+            WHERE
+                auto_event.sent_date BETWEEN ?
+                AND ?
+                AND auto_event.body_type = 'Text'
+                AND (
+                    (
+                        auto_event.generated_from = 'Comunicator'
+                        AND auto_event.type = 'Not-Pending'
+                    )
+                    OR (
+                        auto_event.generated_from = 'Reply'
+                        AND auto_event.type = 'Reply'
+                    )
+                    OR (
+                        auto_event.generated_from = 'System'
+                        AND auto_event.type = 'Not-Pending'
+                    )
+                )
+                AND auto_event.dealer_number = ?
+            ORDER BY
+                eventSentDate
+        `,
+        [startDate, endDate, dealerID]
+    );
+
+    const outboundTextEvents: { [key: string]: string } = {};
+    const inboundTextEvents: { [key: string]: string } = {};
+    const responseTimesInSeconds: number[] = [];
+
+    // Process the text events in order to find the average response time
+    textEvents.forEach(textEvent => {
+        const recipientId = textEvent.recipientId ?? '';
+
+        // Find outbound text events
+        if (textEvent.eventGeneratedFrom == 'Comunicator' && textEvent.eventType == 'Not-Pending') {
+            outboundTextEvents[recipientId] = textEvent.eventSentDate;
+        }
+
+        // Find inbound text events
+        if (textEvent.eventGeneratedFrom == 'Reply' && textEvent.eventType == 'Reply') {
+            inboundTextEvents[recipientId] = textEvent.eventSentDate;
+        }
+
+        // Calculate response times
+        if (outboundTextEvents[recipientId] && inboundTextEvents[recipientId]) {
+            const outboundTextEventDate = new Date(outboundTextEvents[recipientId]!);
+            const inboundTextEventDate = new Date(inboundTextEvents[recipientId]!);
+
+            responseTimesInSeconds.push(getDateDifferenceInSeconds(outboundTextEventDate, inboundTextEventDate));
+        }
+    });
+
+    return responseTimesInSeconds.length ? average(responseTimesInSeconds) : null;
+}
+
+
+/////////////////////////////////////////////////
+// Types
+/////////////////////////////////////////////////
+
+// Aggregate Query Result
+type AggregateQueryResult = { total: number }[];
+
+// Average Response Time Result
+type TextEvents = {
+    eventId: string
+    eventSentDate: string
+    eventType: string
+    eventGeneratedFrom: string
+    recipientId: string
+}[];
+
+
+/////////////////////////////////////////////////
+// Interfaces
+/////////////////////////////////////////////////
 
 /**
  * Represents a row of the output CSV file
@@ -513,24 +607,25 @@ interface ReportRow {
     'Dealer Name'?: string;
     'Dealer ID'?: string;
     'Total # of Closed ROs (CP + WP)'?: number;
-    'Number of ROs Containing AT LEAST one Tech Video'?: number
+    'Number of ROs Containing AT LEAST one Tech Video'?: number;
     'Average CP Labor $'?: number;
     'Average CP Parts $'?: number;
     'Average RO Closed Value'?: number;
     'Number of Opted In ROs'?: number;
     'Number of Opted Out ROs'?: number;
     'Number of SMSs Sent to Customer'?: number;
-    'Number of Media Sent to Customer'?: number
+    'Number of Media Sent to Customer'?: number;
+    'Average SMS Response Time in Seconds'?: number | null;
 }
 
 /**
  * JSON input of the lambda function
  */
 interface VideoReportEvent {
-    dealerIDs?: string[],
-    emailRecipients?: string[],
-    startDate?: string,
-    endDate?: string
+    dealerIDs?: string[];
+    emailRecipients?: string[];
+    startDate?: string;
+    endDate?: string;
 }
 
 /**
@@ -544,4 +639,27 @@ interface SelectDealerDbInfoResult {
     user: string | null;
     password: string | null;
     IP: string | null;
+}
+
+
+/////////////////////////////////////////////////
+// Helper Functions
+/////////////////////////////////////////////////
+
+/**
+ * Average
+ * @param array An array of numbers to calculate the average
+ * @returns The average value of the numbers provided
+ */
+const average = (array: number[]): number => array.reduce((a, b) => a + b) / array.length;
+
+/**
+ * Get Date Difference in Seconds
+ * @param startDate 
+ * @param endDate 
+ * @returns Returns difference between two dates in seconds rounded to the nearest whole number
+ */
+const getDateDifferenceInSeconds = (startDate: any, endDate: any): number => {
+    const diffInMs = Math.round(Math.abs(endDate - startDate));
+    return diffInMs / 1000;
 }
