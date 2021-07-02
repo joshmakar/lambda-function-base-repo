@@ -1,0 +1,10 @@
+// This is the ts config file used only for CI builds (so it doesn't include test files)
+{
+    "extends": "../tsconfig.json",
+    "include": [
+        "./src"
+    ],
+    "compilerOptions": {
+        "outDir": "./build"
+    }
+}
