@@ -370,7 +370,13 @@ async function averageROOpenValueQuery(
     const countResult: AggregateQueryResult = await conn.query(
       `
         SELECT 
-            CAST(AVG(IFNULL(auto_repair_order.repair_order_amount_total_original, IFNULL(CAST(auto_repair_order.repair_order_amount_total AS DECIMAL(10, 2)), 0))) AS DECIMAL(10,2)) as total
+            CAST(
+                AVG(
+                    IFNULL(
+                        auto_repair_order.repair_order_amount_total_original, 
+                        REPLACE(IFNULL(auto_repair_order.repair_order_amount_total, 0), ',', '')
+                )
+            ) AS DECIMAL(10,2)) as total
         FROM
             auto_dealer
                 INNER JOIN
@@ -393,7 +399,7 @@ async function averageROOpenValueQuery(
                 AND auto_repair_order.deleted = 0
         WHERE
             COALESCE(auto_repair_order.technician_id, '') != ''
-                AND auto_repair_order.service_open_date BETWEEN ? AND ?
+                AND auto_repair_order.service_closed_date BETWEEN ? AND ?
                 AND auto_dealer.integralink_code = ?
         `,
       [startDate, endDate, dealerID]
@@ -406,7 +412,7 @@ async function avgROClosedQuery(conn: mysql.Connection, dealerID: string, startD
     const countResult: AggregateQueryResult = await conn.query(
         `
             SELECT
-                CAST(AVG(REPLACE(auto_repair_order.repair_order_amount_total, ',', '')) AS DECIMAL(10,2)) AS total
+                CAST(AVG(REPLACE(IFNULL(auto_repair_order.repair_order_amount_total, 0), ',', '')) AS DECIMAL(10,2)) AS total
             FROM
                 auto_dealer
                     INNER JOIN
@@ -449,9 +455,11 @@ async function averageUpsellAmountQuery(
     const countResult: AggregateQueryResult = await conn.query(
       `
           SELECT 
-            CAST(AVG(
-                  IFNULL(auto_repair_order.repair_order_amount_total_original, IFNULL(CAST(auto_repair_order.repair_order_amount_total AS DECIMAL(10,2)), 0)) -
-                  IFNULL(CAST(auto_repair_order.repair_order_amount_total AS DECIMAL(10,2)), 0)
+            CAST(
+                AVG(
+                    REPLACE(IFNULL(auto_repair_order.repair_order_amount_total, 0), ',', '') -
+                    (IFNULL(auto_repair_order.repair_order_amount_total_original, REPLACE(IFNULL(auto_repair_order.repair_order_amount_total, 0), ',', ''))
+                )
             ) AS DECIMAL(10,2)) as total
           FROM
               auto_dealer
@@ -603,6 +611,9 @@ async function numberSMSSentQuery(conn: mysql.Connection, dealerID: string, star
                     AND auto_dealer.deleted = 0
             WHERE
                 auto_event.type = 'Not-Pending'
+                AND auto_event.body_type = 'Text'
+                AND auto_event.generated_from = 'Comunicator'
+                AND auto_event.type = 'Not-Pending'
                 AND auto_event.date_entered BETWEEN ? AND ?
                 AND integralink_code = ?
         `,
