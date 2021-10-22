@@ -548,7 +548,7 @@ async function averageSMSSentQuery(conn: mysql.Connection, dealerID: string, sta
     const countResult: AggregateQueryResult = await conn.query(
         `
             SELECT
-                CAST(COUNT(DISTINCT auto_event.id) / COUNT(DISTINCT vehicles.roId) AS DECIMAL (10 , 2 )) AS total
+                CAST(COUNT(DISTINCT auto_event.id) / COUNT(DISTINCT repairOrders.roId) AS DECIMAL (10 , 2 )) AS total
             FROM
                 (SELECT DISTINCT
                      auto_vehicle.id AS vehicleId,
@@ -572,9 +572,9 @@ async function averageSMSSentQuery(conn: mysql.Connection, dealerID: string, sta
                      COALESCE(auto_repair_order.technician_id, '') != ''
             AND auto_repair_order.service_closed_date BETWEEN ? AND ?
             AND auto_repair_order.deleted = 0
-            AND auto_dealer.integralink_code = ?) AS vehicles
+            AND auto_dealer.integralink_code = ?) AS repairOrders
                     INNER JOIN
-                auto_recipient ON auto_recipient.auto_vehicle_id_c = vehicles.vehicleId
+                auto_recipient ON auto_recipient.auto_vehicle_id_c = repairOrders.vehicleId
                     AND auto_recipient.deleted = 0
                     INNER JOIN
                 auto_event_to_recipient_c ON auto_recipient.id = auto_event_to_recipient_c.auto_eventa735cipient_ida
@@ -591,7 +591,7 @@ async function averageSMSSentQuery(conn: mysql.Connection, dealerID: string, sta
                 auto_event.body_type = 'Text'
               AND auto_event.generated_from = 'Comunicator'
               AND auto_event.type = 'Not-Pending'
-              AND auto_event.date_entered BETWEEN vehicles.roOpenDate AND ADDTIME(vehicles.roClosedDate, '23:59:59')
+              AND auto_event.date_entered BETWEEN repairOrders.roOpenDate AND ADDTIME(repairOrders.roClosedDate, '23:59:59')
         `,
         [startDate, endDate, dealerID]
     );
@@ -604,7 +604,7 @@ async function averagePhotoSentQuery(conn: mysql.Connection, dealerID: string, s
   const countResult: AggregateQueryResult = await conn.query(
     `
         SELECT
-            CAST(COUNT(DISTINCT auto_media_file.id) / COUNT(DISTINCT vehicles.roId) AS DECIMAL (10 , 2 )) AS total
+            CAST(COUNT(DISTINCT auto_media_file.id) / COUNT(DISTINCT repairOrders.roId) AS DECIMAL (10 , 2 )) AS total
         FROM
             (SELECT DISTINCT
                  auto_vehicle.id AS vehicleId,
@@ -628,9 +628,9 @@ async function averagePhotoSentQuery(conn: mysql.Connection, dealerID: string, s
                  COALESCE(auto_repair_order.technician_id, '') != ''
             AND auto_repair_order.service_closed_date BETWEEN ? AND ?
             AND auto_repair_order.deleted = 0
-            AND auto_dealer.integralink_code = ?) AS vehicles
+            AND auto_dealer.integralink_code = ?) AS repairOrders
                 INNER JOIN
-            auto_recipient ON auto_recipient.auto_vehicle_id_c = vehicles.vehicleId
+            auto_recipient ON auto_recipient.auto_vehicle_id_c = repairOrders.vehicleId
                 AND auto_recipient.deleted = 0
                 INNER JOIN
             auto_event_to_recipient_c ON auto_recipient.id = auto_event_to_recipient_c.auto_eventa735cipient_ida
@@ -646,7 +646,7 @@ async function averagePhotoSentQuery(conn: mysql.Connection, dealerID: string, s
                 INNER JOIN
             auto_media_file ON auto_event.id = auto_media_file.event_id
         WHERE
-            auto_media_file.date_entered BETWEEN vehicles.roOpenDate AND vehicles.roClosedDate
+            auto_media_file.date_entered BETWEEN repairOrders.roOpenDate AND repairOrders.roClosedDate
           AND auto_media_file.file_guid IS NULL
     `,
     [startDate, endDate, dealerID]
@@ -687,9 +687,9 @@ async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealer
                      COALESCE(auto_repair_order.technician_id, '') != ''
             AND auto_repair_order.service_closed_date BETWEEN ? AND ?
             AND auto_repair_order.deleted = 0
-            AND auto_dealer.integralink_code = ?) AS vehicles
+            AND auto_dealer.integralink_code = ?) AS repairOrders
                     INNER JOIN
-                auto_recipient ON auto_recipient.auto_vehicle_id_c = vehicles.vehicleId
+                auto_recipient ON auto_recipient.auto_vehicle_id_c = repairOrders.vehicleId
                     AND auto_recipient.deleted = 0
                     INNER JOIN
                 auto_event_to_recipient_c ON auto_recipient.id = auto_event_to_recipient_c.auto_eventa735cipient_ida
@@ -700,7 +700,7 @@ async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealer
                     LEFT JOIN
                 auto_media_file ON auto_event.id = auto_media_file.event_id
             WHERE
-                auto_event.sent_date BETWEEN vehicles.roOpenDate AND vehicles.roClosedDate
+                auto_event.sent_date BETWEEN repairOrders.roOpenDate AND repairOrders.roClosedDate
               AND auto_event.body_type = 'Text'
               AND ((auto_event.generated_from = 'Comunicator'
                 AND auto_event.type = 'Not-Pending')
