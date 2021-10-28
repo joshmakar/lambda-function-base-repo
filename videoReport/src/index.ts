@@ -31,7 +31,8 @@ export async function handler(event?: VideoReportEvent) {
         // set end date to yesterday
         let date = new Date();
         endDateYMD = new Date(date.setDate(date.getDate()-1)).toISOString().split('T')[0] || endDateYMD;
-    } 
+    }
+    const endDateYMDHMS = endDateYMD + ' 23:59:59';
 
     // Check required input
     if (!event?.dealerIDs?.length) {
@@ -66,7 +67,15 @@ export async function handler(event?: VideoReportEvent) {
             WHERE iddealer IN (${safeDealerIds})
         `)) as SelectDealerDbInfoResult[];
 
-        const rows = await Promise.all(dealerInfoResult.map(res => getReportRowForDealer(res, startDateYMD, endDateYMD)));
+        const rows = await Promise.all(
+            dealerInfoResult.map((res) =>
+                getReportRowForDealer(
+                    res,
+                    startDateYMD,
+                    endDateYMDHMS
+                )
+            )
+        );
 
         // String if results are uploaded as a csv, null otherwise
         let reportURL: string | null = null;
@@ -126,9 +135,9 @@ export async function handler(event?: VideoReportEvent) {
  */
 async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult, startDate: string, endDate: string): Promise<ReportRow> {
     const reportRow: ReportRow = {
-        'Vendor Name': 'Unotifi',
-        'Dealer Name': dealerDbConnInfo.dealerName || '',
-        'Dealer Code': dealerDbConnInfo.internal_code
+        [ReportColumns.VENDOR_NAME]: 'Unotifi',
+        [ReportColumns.DEALER_NAME]: dealerDbConnInfo.dealerName || '',
+        [ReportColumns.DEALER_CODE]: dealerDbConnInfo.internal_code
     };
 
     // Connection to the dealer database (aka sugarcrm database) for subsequent aggregate queries
@@ -141,11 +150,39 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
     });
 
     try {
+        // get all distinct ROs before running other queries
+        const rows = await closedROQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate);
+
+        // return if no repair order found
+        if (!rows.length) {
+            reportRow[ReportColumns.CLOSED_ROS] = 0;
+            reportRow[ReportColumns.ROS_CONTAINING_VIDEO] = 0;
+            reportRow[ReportColumns.AVERAGE_CP_LABOR] = 0;
+            reportRow[ReportColumns.AVERAGE_CP_PARTS] = 0;
+            reportRow[ReportColumns.AVERAGE_RO_OPEN_VALUE] = 0;
+            reportRow[ReportColumns.AVERAGE_RO_CLOSED_VALUE] = 0;;
+            reportRow[ReportColumns.AVERAGE_UPSELL_AMOUNT] = 0;
+            reportRow[ReportColumns.AVERAGE_RESPONSE_TIME] = 0;
+            reportRow[ReportColumns.AVERAGE_VIDEO_LENGTH] = 0;
+            reportRow[ReportColumns.OPTED_IN_ROS] = 0;
+            reportRow[ReportColumns.OPTED_OUT_ROS] = 0;
+            reportRow[ReportColumns.AVERAGE_SMS_SENT_TO_CUSTOMER] = 0;
+            reportRow[ReportColumns.AVERAGE_PHOTOS_SENT_TO_CUSTOMER] = 0;
+            reportRow[ReportColumns.AVERAGE_EMAIL_OPENED] = 0;
+
+            return reportRow;
+        }
+
+        // extract the repair order Ids
+        const roIds = rows!.map(a => a.id);
+
+        // join these ids to a string to be used in the "IN" mysql clause
+        const strROIds  = "('" + roIds.join("', '") + "')";
+
         // Run each aggregate column query concurrently to save time.
         // Technically, mysql queries still run serially for a single connection, but it should at least put the burden of handling that
         // on a db server instead of this Node.js app.
         const [
-            closedROCount,
             totalROsWithVideoCount,
             avgLabor,
             avgParts,
@@ -160,41 +197,40 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
             averagePhotoSent,
             averageVideoViews
         ] = await Promise.all([
-            countROQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            countROWithVideosQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            avgLaborQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            avgPartsQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            averageROOpenValueQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            avgROClosedQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            averageUpsellAmountQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            getAverageSmsResponseTimeInSeconds(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            averageVideoLengthQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            numberOptedInROsQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            numberOptedOutROsQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            averageSMSSentQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            averagePhotoSentQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate),
-            averageVideoViewsQuery(dealerDbConn, dealerDbConnInfo.internal_code + '', startDate, endDate)
+            countROWithVideosQuery(dealerDbConn, strROIds),
+            avgLaborQuery(dealerDbConn, strROIds),
+            avgPartsQuery(dealerDbConn, strROIds),
+            averageROOpenValueQuery(dealerDbConn, strROIds),
+            avgROClosedQuery(dealerDbConn, strROIds),
+            averageUpsellAmountQuery(dealerDbConn, strROIds),
+            getAverageSmsResponseTimeInSeconds(dealerDbConn, strROIds),
+            averageVideoLengthQuery(dealerDbConn, strROIds),
+            numberOptedInROsQuery(dealerDbConn, strROIds),
+            numberOptedOutROsQuery(dealerDbConn, strROIds),
+            averageSMSSentQuery(dealerDbConn, strROIds),
+            averagePhotoSentQuery(dealerDbConn, strROIds),
+            averageVideoViewsQuery(dealerDbConn, strROIds)
         ])
 
         // Assign all the db results to the CSV row
-        reportRow['Total # of Closed RO\'s (CP + WP)'] = closedROCount;
-        reportRow['# of RO\'s Containing AT LEAST one Tech Video'] = totalROsWithVideoCount;
-        reportRow['Average CP Labor $'] = avgLabor;
-        reportRow['Average CP Parts $'] = avgParts;
-        reportRow['Average RO Open Value'] = averageROOpenValue;
-        reportRow['Average RO Closed Value'] = avgROClosed;
-        reportRow['Average Upsell Amount'] = averageUpsellAmount;
-        reportRow['Average Response Time'] = averageSmsResponseTimeInSeconds ? 
+        reportRow[ReportColumns.CLOSED_ROS] = roIds.length;
+        reportRow[ReportColumns.ROS_CONTAINING_VIDEO] = totalROsWithVideoCount;
+        reportRow[ReportColumns.AVERAGE_CP_LABOR] = avgLabor;
+        reportRow[ReportColumns.AVERAGE_CP_PARTS] = avgParts;
+        reportRow[ReportColumns.AVERAGE_RO_OPEN_VALUE] = averageROOpenValue;
+        reportRow[ReportColumns.AVERAGE_RO_CLOSED_VALUE]  = avgROClosed;
+        reportRow[ReportColumns.AVERAGE_UPSELL_AMOUNT] = averageUpsellAmount;
+        reportRow[ReportColumns.AVERAGE_RESPONSE_TIME] = averageSmsResponseTimeInSeconds ?
             moment.utc(averageSmsResponseTimeInSeconds * 1000).format("HH:mm:ss") :
-            null;
-        reportRow["Average Video Length"] = averageVideoLength ?
-          moment.utc(averageVideoLength * 1000).format("HH:mm:ss") :
-          null;
-        reportRow['# of Opted In RO\'s'] = numberOptedInROs;
-        reportRow['# of Opted Out RO\'s'] = numberOptedOutROs;
-        reportRow['Average # of SMS Sent to Customer'] = averageSMSSent;
-        reportRow['Average # of Photo\'s Sent to Customer'] = averagePhotoSent;
-        reportRow['Average # of Email Opened/Microsite Clicked'] = averageVideoViews;
+            0;
+        reportRow[ReportColumns.AVERAGE_VIDEO_LENGTH] = averageVideoLength ?
+            moment.utc(averageVideoLength * 1000).format("HH:mm:ss") :
+            0;
+        reportRow[ReportColumns.OPTED_IN_ROS] = numberOptedInROs;
+        reportRow[ReportColumns.OPTED_OUT_ROS] = numberOptedOutROs;
+        reportRow[ReportColumns.AVERAGE_SMS_SENT_TO_CUSTOMER] = averageSMSSent;
+        reportRow[ReportColumns.AVERAGE_PHOTOS_SENT_TO_CUSTOMER] = averagePhotoSent;
+        reportRow[ReportColumns.AVERAGE_EMAIL_OPENED] = averageVideoViews;
 
         return reportRow;
     } catch (err) {
@@ -205,200 +241,12 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
     }
 }
 
-async function countROQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
+async function closedROQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
     // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
-    const countResult: AggregateQueryResult = await conn.query(`
-        SELECT
-            count(DISTINCT auto_repair_order.id) AS total
-        FROM
-            auto_dealer
-            INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
-            AND auto_custom_auto_dealer_c.deleted = 0
-            INNER JOIN auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-            AND auto_customer.deleted = 0
-            INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
-            AND auto_vehicluto_customer_c.deleted = 0
-            INNER JOIN auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-            AND auto_vehicle.deleted = 0
-            INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-            AND auto_repairauto_vehicle_c.deleted = 0
-            INNER JOIN auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-            AND auto_repair_order.deleted = 0
-            INNER JOIN auto_ro_labrepair_order_c AS aro_lab_pivot ON aro_lab_pivot.auto_ro_laada9r_order_ida = auto_repair_order.id
-            INNER JOIN auto_ro_labor AS labor ON aro_lab_pivot.auto_ro_la1301o_labor_idb = labor.id
-        WHERE
-            COALESCE(auto_repair_order.technician_id, '') != ''
-            AND auto_repair_order.service_closed_date BETWEEN ? AND ?
-            AND auto_dealer.integralink_code = ?
-            AND labor.event_repair_labor_pay_type in ('C', 'W')
-        `,
-        [startDate, endDate, dealerID]
-    );
-
-    return countResult && countResult[0] ? countResult[0].total : undefined;
-}
-
-async function countROWithVideosQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
-    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
-    const countResult: AggregateQueryResult = await conn.query(`
-        SELECT
-            COUNT(1) AS total
-        FROM
-            auto_dealer
-            INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
-            AND auto_custom_auto_dealer_c.deleted = 0
-            INNER JOIN auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-            AND auto_customer.deleted = 0
-            INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
-            AND auto_vehicluto_customer_c.deleted = 0
-            INNER JOIN auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-            AND auto_vehicle.deleted = 0
-            INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-            AND auto_repairauto_vehicle_c.deleted = 0
-            INNER JOIN auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-            AND auto_repair_order.deleted = 0
-        WHERE
-            COALESCE(auto_repair_order.technician_id, '') != ''
-            AND auto_repair_order.service_closed_date BETWEEN ? AND ?
-            AND auto_dealer.integralink_code = ?
-            AND auto_repair_order.has_videos = 1
-        `,
-        [startDate, endDate, dealerID]
-    );
-
-    return countResult && countResult[0] ? countResult[0].total : undefined;
-}
-
-async function avgLaborQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
-    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
-    const countResult: AggregateQueryResult = await conn.query(
+    const result: QueryResult = await conn.query(
         `
             SELECT
-                CAST(AVG(REPLACE(aro_sums.total_labor, ',', '')) AS DECIMAL(10,2)) AS total
-            FROM
-                (
-                    SELECT
-                        SUM(labor.labor_amount) AS total_labor
-                    FROM
-                        auto_dealer
-                        INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
-                        AND auto_custom_auto_dealer_c.deleted = 0
-                        INNER JOIN auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-                        AND auto_customer.deleted = 0
-                        INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
-                        AND auto_vehicluto_customer_c.deleted = 0
-                        INNER JOIN auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-                        AND auto_vehicle.deleted = 0
-                        INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-                        AND auto_repairauto_vehicle_c.deleted = 0
-                        INNER JOIN auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-                        AND auto_repair_order.deleted = 0
-                        INNER JOIN auto_ro_labrepair_order_c AS aro_lab_pivot ON aro_lab_pivot.auto_ro_laada9r_order_ida = auto_repair_order.id
-                        INNER JOIN auto_ro_labor AS labor ON aro_lab_pivot.auto_ro_la1301o_labor_idb = labor.id
-                    WHERE
-                        COALESCE(auto_repair_order.technician_id, '') != ''
-                        AND auto_repair_order.service_closed_date BETWEEN ? AND ?
-                        AND auto_dealer.integralink_code = ?
-                    GROUP BY
-                        auto_repair_order.name
-                ) as aro_sums;
-        `,
-        [startDate, endDate, dealerID]
-    );
-
-    return countResult && countResult[0] ? countResult[0].total : undefined;
-}
-
-async function avgPartsQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
-    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
-    const countResult: AggregateQueryResult = await conn.query(
-        `
-            SELECT 
-                CAST(AVG(REPLACE(aro_sums.total_parts, ',', '')) AS DECIMAL(10,2)) AS total
-            FROM
-                (SELECT 
-                    SUM(labor.parts_amount) AS total_parts
-                FROM
-                    auto_dealer
-                INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
-                    AND auto_custom_auto_dealer_c.deleted = 0
-                INNER JOIN auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-                    AND auto_customer.deleted = 0
-                INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
-                    AND auto_vehicluto_customer_c.deleted = 0
-                INNER JOIN auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-                    AND auto_vehicle.deleted = 0
-                INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-                    AND auto_repairauto_vehicle_c.deleted = 0
-                INNER JOIN auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-                    AND auto_repair_order.deleted = 0
-                INNER JOIN auto_ro_labrepair_order_c AS aro_lab_pivot ON aro_lab_pivot.auto_ro_laada9r_order_ida = auto_repair_order.id
-                INNER JOIN auto_ro_labor AS labor ON aro_lab_pivot.auto_ro_la1301o_labor_idb = labor.id
-                WHERE
-                    COALESCE(auto_repair_order.technician_id, '') != ''
-                        AND auto_repair_order.service_closed_date BETWEEN ? AND ?
-                        AND auto_dealer.integralink_code = ?
-                GROUP BY auto_repair_order.name) AS aro_sums
-        `,
-        [startDate, endDate, dealerID]
-    );
-
-    return countResult && countResult[0] ? countResult[0].total : undefined;
-}
-
-async function averageROOpenValueQuery(
-    conn: mysql.Connection,
-    dealerID: string,
-    startDate: string,
-    endDate: string
-  ) {
-    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
-    const countResult: AggregateQueryResult = await conn.query(
-      `
-        SELECT 
-            CAST(
-                AVG(
-                    IFNULL(
-                        auto_repair_order.repair_order_amount_total_original, 
-                        REPLACE(IFNULL(auto_repair_order.repair_order_amount_total, 0), ',', '')
-                )
-            ) AS DECIMAL(10,2)) as total
-        FROM
-            auto_dealer
-                INNER JOIN
-            auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
-                AND auto_custom_auto_dealer_c.deleted = 0
-                INNER JOIN
-            auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-                AND auto_customer.deleted = 0
-                INNER JOIN
-            auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
-                AND auto_vehicluto_customer_c.deleted = 0
-                INNER JOIN
-            auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-                AND auto_vehicle.deleted = 0
-                INNER JOIN
-            auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-                AND auto_repairauto_vehicle_c.deleted = 0
-                INNER JOIN
-            auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-                AND auto_repair_order.deleted = 0
-        WHERE
-            COALESCE(auto_repair_order.technician_id, '') != ''
-                AND auto_repair_order.service_closed_date BETWEEN ? AND ?
-                AND auto_dealer.integralink_code = ?
-        `,
-      [startDate, endDate, dealerID]
-    );
-    return countResult && countResult[0] ? countResult[0].total : undefined;
-  }
-
-async function avgROClosedQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
-    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
-    const countResult: AggregateQueryResult = await conn.query(
-        `
-            SELECT
-                CAST(AVG(REPLACE(IFNULL(auto_repair_order.repair_order_amount_total, 0), ',', '')) AS DECIMAL(10,2)) AS total
+                DISTINCT auto_repair_order.id
             FROM
                 auto_dealer
                     INNER JOIN
@@ -419,24 +267,138 @@ async function avgROClosedQuery(conn: mysql.Connection, dealerID: string, startD
                     INNER JOIN
                 auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
                     AND auto_repair_order.deleted = 0
+                    INNER JOIN
+                auto_ro_labrepair_order_c ON auto_ro_labrepair_order_c.auto_ro_laada9r_order_ida = auto_repair_order.id
+                    AND auto_ro_labrepair_order_c.deleted = 0
+                    INNER JOIN
+                auto_ro_labor ON auto_ro_labrepair_order_c.auto_ro_la1301o_labor_idb = auto_ro_labor.id
             WHERE
                 COALESCE(auto_repair_order.technician_id, '') != ''
-                AND auto_repair_order.service_closed_date BETWEEN ? AND ?
-                AND auto_dealer.integralink_code = ?
+                    AND auto_repair_order.service_closed_date BETWEEN ? AND ?
+                    AND auto_dealer.integralink_code = ?
+                    AND auto_ro_labor.event_repair_labor_pay_type IN ('C' , 'W')
         `,
         [startDate, endDate, dealerID]
     );
 
-    return countResult && countResult[0] ? countResult[0].total : undefined;
+    return result ? result : [];
+}
+
+async function countROWithVideosQuery(
+    conn: mysql.Connection,
+    roIds: string
+) {
+    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
+    const countResult: AggregateQueryResult = await conn.query(
+        `
+            SELECT
+                COUNT(DISTINCT auto_repair_order.id) AS total
+            FROM
+                auto_repair_order
+            WHERE
+                auto_repair_order.has_videos = 1 
+                AND auto_repair_order.id IN ` + roIds
+    );
+
+    return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
+}
+
+async function avgLaborQuery(
+    conn: mysql.Connection,
+    roIds: string
+) {
+    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
+    // because the apostrophe parameter is escaped in a query parameter, put directly the value in the query
+    const countResult: AggregateQueryResult = await conn.query(
+        `
+            SELECT
+                CAST(SUM(REPLACE(auto_ro_labor.labor_amount, ',', '')) / COUNT(DISTINCT auto_repair_order.id) AS DECIMAL (10 , 2 )) AS total
+            FROM
+                auto_repair_order
+                    INNER JOIN
+                auto_ro_labrepair_order_c ON auto_ro_labrepair_order_c.auto_ro_laada9r_order_ida = auto_repair_order.id
+                    AND auto_ro_labrepair_order_c.deleted = 0
+                    INNER JOIN
+                auto_ro_labor ON auto_ro_labrepair_order_c.auto_ro_la1301o_labor_idb = auto_ro_labor.id
+            WHERE auto_repair_order.id IN ` + roIds + `
+                AND auto_ro_labor.event_repair_labor_pay_type in ('C', 'W')
+        `
+    );
+
+    return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
+}
+
+async function avgPartsQuery(
+    conn: mysql.Connection,
+    roIds: string
+) {
+    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
+    const countResult: AggregateQueryResult = await conn.query(
+        `
+            SELECT 
+                CAST(SUM(REPLACE(auto_ro_labor.parts_amount, ',', '')) / COUNT(DISTINCT auto_repair_order.id) AS DECIMAL (10 , 2 )) AS total
+            FROM 
+                 auto_repair_order
+                     INNER JOIN
+                 auto_ro_labrepair_order_c ON auto_ro_labrepair_order_c.auto_ro_laada9r_order_ida = auto_repair_order.id
+                     AND auto_ro_labrepair_order_c.deleted = 0
+                     INNER JOIN
+                 auto_ro_labor ON auto_ro_labrepair_order_c.auto_ro_la1301o_labor_idb = auto_ro_labor.id
+            WHERE auto_repair_order.id IN ` + roIds + `
+                AND auto_ro_labor.event_repair_labor_pay_type in ('C', 'W')
+        `
+    );
+
+    return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
+}
+
+async function averageROOpenValueQuery(
+    conn: mysql.Connection,
+    roIds: string
+  ) {
+    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
+    const countResult: AggregateQueryResult = await conn.query(
+      `
+        SELECT 
+            CAST(
+                AVG(
+                    IFNULL(
+                        auto_repair_order.repair_order_amount_total_original, 
+                        REPLACE(IFNULL(auto_repair_order.repair_order_amount_total, 0), ',', '')
+                )
+            ) AS DECIMAL(10,2)) as total
+        FROM
+            auto_repair_order
+        WHERE 
+            auto_repair_order.id IN ` + roIds
+    );
+
+    return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
+  }
+
+async function avgROClosedQuery(
+    conn: mysql.Connection,
+        roIds: string
+) {
+    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
+    const countResult: AggregateQueryResult = await conn.query(
+        `
+            SELECT
+                CAST(AVG(REPLACE(IFNULL(auto_repair_order.repair_order_amount_total, 0), ',', '')) AS DECIMAL(10,2)) AS total
+            FROM 
+                 auto_repair_order
+            WHERE 
+                  auto_repair_order.id IN ` + roIds
+    );
+
+    return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
 }
 
 
 async function averageUpsellAmountQuery(
     conn: mysql.Connection,
-    dealerID: string,
-    startDate: string,
-    endDate: string
-  ) {
+    roIds: string
+) {
     // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
     const countResult: AggregateQueryResult = await conn.query(
       `
@@ -447,134 +409,94 @@ async function averageUpsellAmountQuery(
                     (IFNULL(auto_repair_order.repair_order_amount_total_original, REPLACE(IFNULL(auto_repair_order.repair_order_amount_total, 0), ',', ''))
                 )
             ) AS DECIMAL(10,2)) as total
-          FROM
-              auto_dealer
-                  INNER JOIN
-              auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
-                  AND auto_custom_auto_dealer_c.deleted = 0
-                  INNER JOIN
-              auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-                  AND auto_customer.deleted = 0
-                  INNER JOIN
-              auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
-                  AND auto_vehicluto_customer_c.deleted = 0
-                  INNER JOIN
-              auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-                  AND auto_vehicle.deleted = 0
-                  INNER JOIN
-              auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-                  AND auto_repairauto_vehicle_c.deleted = 0
-                  INNER JOIN
-              auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-                  AND auto_repair_order.deleted = 0
-          WHERE
-              COALESCE(auto_repair_order.technician_id, '') != ''
-                  AND auto_repair_order.service_closed_date BETWEEN ? AND ?
-                  AND auto_dealer.integralink_code = ?
-        `,
-      [startDate, endDate, dealerID]
+          FROM 
+               auto_repair_order
+          WHERE 
+                auto_repair_order.id IN ` + roIds
     );
-    return countResult && countResult[0] ? countResult[0].total : undefined;
+    return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
   }
 
-async function numberOptedInROsQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
-    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
-    const countResult: AggregateQueryResult = await conn.query(
-        `
-        SELECT 
-            COUNT(DISTINCT auto_repair_order.id) as total
-        FROM
-            auto_dealer
-                INNER JOIN
-            auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
-                AND auto_custom_auto_dealer_c.deleted = 0
-                INNER JOIN
-            auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-                AND auto_customer.deleted = 0
-                INNER JOIN
-            auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
-                AND auto_vehicluto_customer_c.deleted = 0
-                INNER JOIN
-            auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-                AND auto_vehicle.deleted = 0
-                INNER JOIN
-            auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-                AND auto_repairauto_vehicle_c.deleted = 0
-                INNER JOIN
-            auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-                AND auto_repair_order.deleted = 0
-        WHERE
-            auto_repair_order.service_closed_date BETWEEN ? AND ?
-                AND auto_dealer.integralink_code = ?
-                AND COALESCE(auto_repair_order.technician_id, '') != ''
-                AND auto_customer.do_not_text_flag = 0
-        `,
-        [startDate, endDate, dealerID]
-    );
-    return countResult && countResult[0] ? countResult[0].total : undefined;
-}
-
-async function numberOptedOutROsQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
-    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
-    const countResult: AggregateQueryResult = await conn.query(
-        `
-        SELECT
-            count(DISTINCT auto_repair_order.id) as total
-        FROM auto_repair_order
-            INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-                AND auto_repair_order.deleted = 0
-            INNER JOIN auto_vehicle ON auto_vehicle.id = auto_repairauto_vehicle_c.auto_repai4169vehicle_ida
-                AND auto_repairauto_vehicle_c.deleted = 0
-            INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-                AND auto_vehicle.deleted = 0
-            INNER JOIN auto_customer ON auto_customer.id = auto_vehicluto_customer_c.auto_vehic9275ustomer_ida
-                AND auto_vehicluto_customer_c.deleted = 0		
-            INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-                AND auto_customer.deleted = 0
-            INNER JOIN auto_dealer ON auto_dealer.id = auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida
-                AND auto_custom_auto_dealer_c.deleted = 0
-        WHERE
-            auto_repair_order.service_closed_date BETWEEN ? AND ?
-            AND auto_dealer.integralink_code = ?
-            AND auto_customer.do_not_text_flag = 1
-        `,
-        [startDate, endDate, dealerID]
-    );
-    return countResult && countResult[0] ? countResult[0].total : undefined;
-}
-
-async function averageSMSSentQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
+async function numberOptedInROsQuery(
+    conn: mysql.Connection,
+    roIds: string
+) {
     // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
     const countResult: AggregateQueryResult = await conn.query(
         `
             SELECT
-                CAST(COUNT(DISTINCT auto_event.id) / COUNT(DISTINCT repairOrders.roId) AS DECIMAL (10 , 2 )) AS total
+                COUNT(DISTINCT auto_customer.id) as total
             FROM
-                (SELECT DISTINCT
-                     auto_vehicle.id AS vehicleId,
-                     auto_repair_order.id AS roId,
-                     auto_repair_order.service_open_date AS roOpenDate,
-                     ADDTIME(auto_repair_order.service_closed_date, '23:59:59') AS roClosedDate
-                 FROM
-                     auto_dealer
-                         INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
-                         AND auto_custom_auto_dealer_c.deleted = 0
-                         INNER JOIN auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-                         AND auto_customer.deleted = 0
-                         INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
-                         AND auto_vehicluto_customer_c.deleted = 0
-                         INNER JOIN auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-                         AND auto_vehicle.deleted = 0
-                         INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-                         AND auto_repairauto_vehicle_c.deleted = 0
-                         INNER JOIN auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-                 WHERE
-                     COALESCE(auto_repair_order.technician_id, '') != ''
-            AND auto_repair_order.service_closed_date BETWEEN ? AND ?
-            AND auto_repair_order.deleted = 0
-            AND auto_dealer.integralink_code = ?) AS repairOrders
+                auto_customer
                     INNER JOIN
-                auto_recipient ON auto_recipient.auto_vehicle_id_c = repairOrders.vehicleId
+                auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
+                    AND auto_vehicluto_customer_c.deleted = 0
+                    INNER JOIN
+                auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
+                    AND auto_vehicle.deleted = 0
+                    INNER JOIN
+                auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
+                    AND auto_repairauto_vehicle_c.deleted = 0
+                    INNER JOIN
+                auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
+                    AND auto_repair_order.deleted = 0
+            WHERE
+                auto_customer.do_not_text_flag = 0
+              AND auto_repair_order.id IN ` + roIds
+    );
+
+    return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
+}
+
+async function numberOptedOutROsQuery(
+    conn: mysql.Connection,
+    roIds: string
+) {
+    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
+    const countResult: AggregateQueryResult = await conn.query(
+        `
+            SELECT 
+                   COUNT(DISTINCT auto_customer.id) as total
+            FROM 
+                auto_customer
+            INNER JOIN 
+                 auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
+                AND auto_vehicluto_customer_c.deleted = 0
+            INNER JOIN
+                auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
+                AND auto_vehicle.deleted = 0
+            INNER JOIN
+                auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
+                AND auto_repairauto_vehicle_c.deleted = 0
+            INNER JOIN
+                auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
+                AND auto_repair_order.deleted = 0
+            WHERE
+                auto_customer.do_not_text_flag = 1
+                AND auto_repair_order.id IN ` + roIds
+    );
+
+    return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
+}
+
+async function averageSMSSentQuery(
+    conn: mysql.Connection,
+    roIds: string
+) {
+    // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
+    const countResult: AggregateQueryResult = await conn.query(
+        `
+            SELECT
+                CAST(COUNT(DISTINCT auto_event.id) / COUNT(DISTINCT auto_repair_order.id) AS DECIMAL (10 , 2 )) AS total
+            FROM
+                auto_vehicle
+                    INNER JOIN
+                auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
+                    AND auto_repairauto_vehicle_c.deleted = 0
+                    INNER JOIN
+                auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
+                    INNER JOIN
+                auto_recipient ON auto_recipient.auto_vehicle_id_c = auto_vehicle.id
                     AND auto_recipient.deleted = 0
                     INNER JOIN
                 auto_event_to_recipient_c ON auto_recipient.id = auto_event_to_recipient_c.auto_eventa735cipient_ida
@@ -587,50 +509,36 @@ async function averageSMSSentQuery(conn: mysql.Connection, dealerID: string, sta
                     INNER JOIN
                 auto_contact_person ON auto_contact_person.user_id_c = users.id
                     AND auto_contact_person.deleted = 0
-            WHERE
-                auto_event.body_type = 'Text'
-              AND auto_event.generated_from = 'Comunicator'
-              AND auto_event.type = 'Not-Pending'
-              AND auto_event.date_entered BETWEEN repairOrders.roOpenDate AND ADDTIME(repairOrders.roClosedDate, '23:59:59')
-        `,
-        [startDate, endDate, dealerID]
+            WHERE 
+                  auto_repair_order.id IN ` + roIds + `
+                  AND auto_event.body_type = 'Text'
+                  AND auto_event.generated_from = 'Comunicator'
+                  AND auto_event.type = 'Not-Pending'
+                  AND auto_event.date_entered BETWEEN auto_repair_order.service_open_date AND ADDTIME(auto_repair_order.service_closed_date, '23:59:59')
+        `
     );
 
-    return countResult && countResult[0] ? countResult[0].total : undefined;
+    return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
 }
 
-async function averagePhotoSentQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
+async function averagePhotoSentQuery(
+    conn: mysql.Connection,
+    roIds: string
+) {
   // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
   const countResult: AggregateQueryResult = await conn.query(
     `
         SELECT
-            CAST(COUNT(DISTINCT auto_media_file.id) / COUNT(DISTINCT repairOrders.roId) AS DECIMAL (10 , 2 )) AS total
+            CAST(COUNT(DISTINCT auto_media_file.id) / COUNT(DISTINCT auto_repair_order.id) AS DECIMAL (10 , 2 )) AS total
         FROM
-            (SELECT DISTINCT
-                 auto_vehicle.id AS vehicleId,
-                 auto_repair_order.id AS roId,
-                 auto_repair_order.service_open_date AS roOpenDate,
-                 ADDTIME(auto_repair_order.service_closed_date, '23:59:59') AS roClosedDate
-             FROM
-                 auto_dealer
-                     INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
-                     AND auto_custom_auto_dealer_c.deleted = 0
-                     INNER JOIN auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-                     AND auto_customer.deleted = 0
-                     INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
-                     AND auto_vehicluto_customer_c.deleted = 0
-                     INNER JOIN auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-                     AND auto_vehicle.deleted = 0
-                     INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-                     AND auto_repairauto_vehicle_c.deleted = 0
-                     INNER JOIN auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-             WHERE
-                 COALESCE(auto_repair_order.technician_id, '') != ''
-            AND auto_repair_order.service_closed_date BETWEEN ? AND ?
-            AND auto_repair_order.deleted = 0
-            AND auto_dealer.integralink_code = ?) AS repairOrders
+            auto_vehicle
                 INNER JOIN
-            auto_recipient ON auto_recipient.auto_vehicle_id_c = repairOrders.vehicleId
+            auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
+                AND auto_repairauto_vehicle_c.deleted = 0
+                INNER JOIN
+            auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
+                INNER JOIN
+            auto_recipient ON auto_recipient.auto_vehicle_id_c = auto_vehicle.id
                 AND auto_recipient.deleted = 0
                 INNER JOIN
             auto_event_to_recipient_c ON auto_recipient.id = auto_event_to_recipient_c.auto_eventa735cipient_ida
@@ -646,16 +554,18 @@ async function averagePhotoSentQuery(conn: mysql.Connection, dealerID: string, s
                 INNER JOIN
             auto_media_file ON auto_event.id = auto_media_file.event_id
         WHERE
-            auto_media_file.date_entered BETWEEN repairOrders.roOpenDate AND repairOrders.roClosedDate
-          AND auto_media_file.file_guid IS NULL
-    `,
-    [startDate, endDate, dealerID]
+            auto_repair_order.id IN ` + roIds + `
+            AND auto_media_file.date_entered BETWEEN auto_repair_order.service_open_date AND ADDTIME(auto_repair_order.service_open_date, '23:59:59')
+            AND auto_media_file.file_guid IS NULL
+    `
   );
-  return countResult && countResult[0] ? countResult[0].total : undefined;
+  return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
 }
 
-async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
-
+async function getAverageSmsResponseTimeInSeconds(
+    conn: mysql.Connection,
+        roIds: string
+) {
     const textEvents: TextEvents = await conn.query(
         `
             SELECT DISTINCT
@@ -666,30 +576,14 @@ async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealer
                 auto_event.generated_from AS eventGeneratedFrom,
                 auto_media_file.id AS mediaFileId
             FROM
-                (SELECT DISTINCT
-                     auto_vehicle.id AS vehicleId,
-                     auto_repair_order.service_open_date AS roOpenDate,
-                     ADDTIME(auto_repair_order.service_closed_date, '23:59:59') AS roClosedDate
-                 FROM
-                     auto_dealer
-                         INNER JOIN auto_custom_auto_dealer_c ON auto_custom_auto_dealer_c.auto_custo60bd_dealer_ida = auto_dealer.id
-                         AND auto_custom_auto_dealer_c.deleted = 0
-                         INNER JOIN auto_customer ON auto_custom_auto_dealer_c.auto_custo0932ustomer_idb = auto_customer.id
-                         AND auto_customer.deleted = 0
-                         INNER JOIN auto_vehicluto_customer_c ON auto_vehicluto_customer_c.auto_vehic9275ustomer_ida = auto_customer.id
-                         AND auto_vehicluto_customer_c.deleted = 0
-                         INNER JOIN auto_vehicle ON auto_vehicluto_customer_c.auto_vehic831dvehicle_idb = auto_vehicle.id
-                         AND auto_vehicle.deleted = 0
-                         INNER JOIN auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-                         AND auto_repairauto_vehicle_c.deleted = 0
-                         INNER JOIN auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-                 WHERE
-                     COALESCE(auto_repair_order.technician_id, '') != ''
-            AND auto_repair_order.service_closed_date BETWEEN ? AND ?
-            AND auto_repair_order.deleted = 0
-            AND auto_dealer.integralink_code = ?) AS repairOrders
+                auto_vehicle
                     INNER JOIN
-                auto_recipient ON auto_recipient.auto_vehicle_id_c = repairOrders.vehicleId
+                auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
+                    AND auto_repairauto_vehicle_c.deleted = 0
+                    INNER JOIN
+                auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
+                    INNER JOIN
+                auto_recipient ON auto_recipient.auto_vehicle_id_c = auto_vehicle.id
                     AND auto_recipient.deleted = 0
                     INNER JOIN
                 auto_event_to_recipient_c ON auto_recipient.id = auto_event_to_recipient_c.auto_eventa735cipient_ida
@@ -700,15 +594,16 @@ async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealer
                     LEFT JOIN
                 auto_media_file ON auto_event.id = auto_media_file.event_id
             WHERE
-                auto_event.sent_date BETWEEN repairOrders.roOpenDate AND repairOrders.roClosedDate
+                    auto_repair_order.id IN ` + roIds + `
+              AND auto_event.sent_date BETWEEN auto_repair_order.service_open_date AND ADDTIME(auto_repair_order.service_open_date, '23:59:59')
               AND auto_event.body_type = 'Text'
               AND ((auto_event.generated_from = 'Comunicator'
-                AND auto_event.type = 'Not-Pending')
+                AND auto_event.type = 'Not-Pending'
+                AND auto_media_file.file_guid IS NOT NULL)
                 OR (auto_event.generated_from = 'Reply'
                     AND auto_event.type = 'Reply'))
-            ORDER BY auto_recipient.id , auto_event.sent_date
-        `,
-        [startDate, endDate, dealerID]
+            ORDER BY auto_recipient.id, auto_event.sent_date
+        `
     );
 
     const outboundTextEvents: { [key: string]: string } = {};
@@ -741,19 +636,21 @@ async function getAverageSmsResponseTimeInSeconds(conn: mysql.Connection, dealer
                 textEvents[index - 1]!.mediaFileId &&
                 textEvent.eventGeneratedFrom == 'Reply'
             ) {
-                responseTimesInSeconds.push(getDateDifferenceInSeconds(outboundTextEventDate, inboundTextEventDate));
+                // ignore the responses greater than one day
+                const diff = getDateDifferenceInSeconds(outboundTextEventDate, inboundTextEventDate);
+                if (diff < 86400) {
+                    responseTimesInSeconds.push(diff);
+                }
             }
         }
     });
 
-    return responseTimesInSeconds.length ? average(responseTimesInSeconds) : null;
+    return responseTimesInSeconds.length ? average(responseTimesInSeconds) : 0;
 }
 
 async function averageVideoLengthQuery(
-  conn: mysql.Connection,
-  dealerID: string,
-  startDate: string,
-  endDate: string
+    conn: mysql.Connection,
+    roIds: string
 ) {
   // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
   const countResult: AggregateQueryResult = await conn.query(
@@ -761,40 +658,44 @@ async function averageVideoLengthQuery(
         SELECT 
             AVG(IF(auto_media_file.file_length IS NOT NULL, auto_media_file.file_length, 0)) as total
         FROM
-            auto_media_file
+            auto_vehicle
                 INNER JOIN
-            auto_event ON auto_event.id = auto_media_file.event_id
+            auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
+                AND auto_repairauto_vehicle_c.deleted = 0
+                INNER JOIN
+            auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
+                INNER JOIN
+            auto_recipient ON auto_recipient.auto_vehicle_id_c = auto_vehicle.id
+                AND auto_recipient.deleted = 0
+                INNER JOIN
+            auto_event_to_recipient_c ON auto_recipient.id = auto_event_to_recipient_c.auto_eventa735cipient_ida
+                AND auto_event_to_recipient_c.deleted = 0
+                INNER JOIN
+            auto_event ON auto_event.id = auto_event_to_recipient_c.auto_eventfa83o_event_idb
+                AND auto_event.deleted = 0
                 INNER JOIN
             users ON auto_event.modified_user_id = users.id
                 INNER JOIN
             auto_contact_person ON auto_contact_person.user_id_c = users.id
                 AND auto_contact_person.deleted = 0
-                LEFT JOIN
-            auto_event_to_recipient_c ON auto_event_to_recipient_c.auto_eventfa83o_event_idb = auto_event.id
-                AND auto_event_to_recipient_c.deleted = 0
                 INNER JOIN
-            auto_contac_auto_dealer_c ON auto_contac_auto_dealer_c.auto_contaff8f_person_idb = auto_contact_person.id
-                AND auto_contac_auto_dealer_c.deleted = 0
-                INNER JOIN
-            auto_dealer ON auto_contac_auto_dealer_c.auto_contafb84_dealer_ida = auto_dealer.id
-                AND auto_dealer.deleted = 0
-        WHERE
-            auto_event.type = 'Not-Pending'
-                AND auto_media_file.date_entered BETWEEN ? AND ?
-                AND auto_media_file.file_guid IS NOT NULL
-                AND auto_media_file.file_length IS NOT NULL
-                AND integralink_code = ?
-       `,
-    [startDate, endDate, dealerID]
+            auto_media_file ON auto_event.id = auto_media_file.event_id
+        WHERE 
+            auto_repair_order.id IN ` + roIds + `
+            AND auto_event.body_type = 'Text'
+            AND auto_event.generated_from = 'Comunicator'
+            AND auto_event.type = 'Not-Pending'
+            AND auto_media_file.date_entered BETWEEN auto_repair_order.service_open_date AND ADDTIME(auto_repair_order.service_open_date, '23:59:59')  
+            AND auto_media_file.file_guid IS NOT NULL
+            AND auto_media_file.file_length IS NOT NULL
+       `
   );
-  return countResult && countResult[0] ? countResult[0].total : undefined;
+  return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
 }
 
 async function averageVideoViewsQuery(
-  conn: mysql.Connection,
-  dealerID: string,
-  startDate: string,
-  endDate: string
+    conn: mysql.Connection,
+    roIds: string
 ) {
   // Type asserting as CountQueryResult here because mysql.query types don't allow you to pass in a type argument...
   const countResult: AggregateQueryResult = await conn.query(
@@ -802,39 +703,76 @@ async function averageVideoViewsQuery(
         SELECT 
             CAST(COUNT(DISTINCT auto_media_file_view.id) / COUNT(DISTINCT auto_media_file.id) AS DECIMAL(10, 2)) AS total
         FROM
-            auto_media_file
+            auto_vehicle
                 INNER JOIN
-            auto_event ON auto_event.id = auto_media_file.event_id
+            auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
+                AND auto_repairauto_vehicle_c.deleted = 0
+                INNER JOIN
+            auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
+                INNER JOIN
+            auto_recipient ON auto_recipient.auto_vehicle_id_c = auto_vehicle.id
+                AND auto_recipient.deleted = 0
+                INNER JOIN
+            auto_event_to_recipient_c ON auto_recipient.id = auto_event_to_recipient_c.auto_eventa735cipient_ida
+                AND auto_event_to_recipient_c.deleted = 0
+                INNER JOIN
+            auto_event ON auto_event.id = auto_event_to_recipient_c.auto_eventfa83o_event_idb
+                AND auto_event.deleted = 0
                 INNER JOIN
             users ON auto_event.modified_user_id = users.id
                 INNER JOIN
             auto_contact_person ON auto_contact_person.user_id_c = users.id
                 AND auto_contact_person.deleted = 0
-                LEFT JOIN
-            auto_event_to_recipient_c ON auto_event_to_recipient_c.auto_eventfa83o_event_idb = auto_event.id
-                AND auto_event_to_recipient_c.deleted = 0
                 INNER JOIN
-            auto_contac_auto_dealer_c ON auto_contac_auto_dealer_c.auto_contaff8f_person_idb = auto_contact_person.id
-                AND auto_contac_auto_dealer_c.deleted = 0
-                INNER JOIN
-            auto_dealer ON auto_contac_auto_dealer_c.auto_contafb84_dealer_ida = auto_dealer.id
-                AND auto_dealer.deleted = 0
+            auto_media_file ON auto_event.id = auto_media_file.event_id
                 LEFT JOIN
             auto_media_file_view ON auto_media_file.id = auto_media_file_view.auto_media_file_id_c
-        WHERE
-            auto_event.type = 'Not-Pending'
-                AND auto_media_file.date_entered BETWEEN ? AND ?
-                AND auto_media_file.file_guid IS NOT NULL
-                AND integralink_code = ?
-      `,
-    [startDate, endDate, dealerID]
+        WHERE 
+            auto_repair_order.id IN ` + roIds + `
+            AND auto_event.body_type = 'Text'
+            AND auto_event.generated_from = 'Comunicator'
+            AND auto_event.type = 'Not-Pending'  
+            AND auto_media_file.date_entered BETWEEN auto_repair_order.service_open_date AND ADDTIME(auto_repair_order.service_open_date, '23:59:59')
+            AND auto_media_file.file_guid IS NOT NULL
+      `
   );
-  return countResult && countResult[0] ? countResult[0].total : undefined;
+  return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
+}
+
+/////////////////////////////////////////////////
+// Constants
+/////////////////////////////////////////////////
+
+/**
+ * Represents the column names of the output CSV file
+ */
+
+enum ReportColumns {
+    VENDOR_NAME = 'Vendor Name',
+    DEALER_NAME = 'Dealer Name',
+    DEALER_CODE = 'Dealer Code',
+    CLOSED_ROS = 'Total # of Closed RO\'s (CP + WP)',
+    ROS_CONTAINING_VIDEO = '# of RO\'s Containing AT LEAST one Tech Video',
+    AVERAGE_CP_LABOR = 'Average CP Labor $',
+    AVERAGE_CP_PARTS = 'Average CP Parts $',
+    AVERAGE_RO_OPEN_VALUE = 'Average RO Open Value',
+    AVERAGE_RO_CLOSED_VALUE = 'Average RO Closed Value',
+    AVERAGE_UPSELL_AMOUNT = 'Average Upsell Amount',
+    AVERAGE_RESPONSE_TIME = 'Average Response Time',
+    AVERAGE_VIDEO_LENGTH = 'Average Video Length',
+    OPTED_IN_ROS = '# of Opted In RO\'s',
+    OPTED_OUT_ROS = '# of Opted Out RO\'s',
+    AVERAGE_SMS_SENT_TO_CUSTOMER = 'Average # of SMS Sent to Customer',
+    AVERAGE_PHOTOS_SENT_TO_CUSTOMER = 'Average # of Photo\'s Sent to Customer',
+    AVERAGE_EMAIL_OPENED = 'Average # of Email Opened/Microsite Clicked'
 }
 
 /////////////////////////////////////////////////
 // Types
 /////////////////////////////////////////////////
+
+// Query Result
+type QueryResult = { id: string }[];
 
 // Aggregate Query Result
 type AggregateQueryResult = { total: number }[];
@@ -858,23 +796,23 @@ type TextEvents = {
  * Represents a row of the output CSV file
  */
 interface ReportRow {
-    'Vendor Name'?: string;
-    'Dealer Name'?: string;
-    'Dealer Code'?: string;
-    'Total # of Closed RO\'s (CP + WP)'?: number | null;
-    '# of RO\'s Containing AT LEAST one Tech Video'?: number | null;
-    'Average CP Labor $'?: number | null;
-    'Average CP Parts $'?: number | null;
-    'Average RO Open Value'?: number | null;
-    'Average RO Closed Value'?: number | null;
-    'Average Upsell Amount'?: number | null;
-    'Average Response Time'?: string | null;
-    'Average Video Length'?: string | null;
-    '# of Opted In RO\'s'?: number | null;
-    '# of Opted Out RO\'s'?: number | null;
-    'Average # of SMS Sent to Customer'?: number | null;
-    'Average # of Photo\'s Sent to Customer'?: number | null;
-    'Average # of Email Opened/Microsite Clicked'?: number | null;
+    [ReportColumns.VENDOR_NAME]?: string;
+    [ReportColumns.DEALER_NAME]?: string;
+    [ReportColumns.DEALER_CODE]?: string;
+    [ReportColumns.CLOSED_ROS]?: number;
+    [ReportColumns.ROS_CONTAINING_VIDEO]?: number;
+    [ReportColumns.AVERAGE_CP_LABOR]?: number;
+    [ReportColumns.AVERAGE_CP_PARTS]?: number;
+    [ReportColumns.AVERAGE_RO_OPEN_VALUE]?: number;
+    [ReportColumns.AVERAGE_RO_CLOSED_VALUE]?: number;
+    [ReportColumns.AVERAGE_UPSELL_AMOUNT]?: number;
+    [ReportColumns.AVERAGE_RESPONSE_TIME]?: string | number;
+    [ReportColumns.AVERAGE_VIDEO_LENGTH]?: string | number;
+    [ReportColumns.OPTED_IN_ROS]?: number;
+    [ReportColumns.OPTED_OUT_ROS]?: number;
+    [ReportColumns.AVERAGE_SMS_SENT_TO_CUSTOMER]?: number;
+    [ReportColumns.AVERAGE_PHOTOS_SENT_TO_CUSTOMER]?: number;
+    [ReportColumns.AVERAGE_EMAIL_OPENED]?: number;
 }
 
 /**
