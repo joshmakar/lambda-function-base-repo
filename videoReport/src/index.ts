@@ -267,16 +267,11 @@ async function closedROQuery(conn: mysql.Connection, dealerID: string, startDate
                     INNER JOIN
                 auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
                     AND auto_repair_order.deleted = 0
-                    INNER JOIN
-                auto_ro_labrepair_order_c ON auto_ro_labrepair_order_c.auto_ro_laada9r_order_ida = auto_repair_order.id
-                    AND auto_ro_labrepair_order_c.deleted = 0
-                    INNER JOIN
-                auto_ro_labor ON auto_ro_labrepair_order_c.auto_ro_la1301o_labor_idb = auto_ro_labor.id
             WHERE
                 COALESCE(auto_repair_order.technician_id, '') != ''
                     AND auto_repair_order.service_closed_date BETWEEN ? AND ?
                     AND auto_dealer.integralink_code = ?
-                    AND auto_ro_labor.event_repair_labor_pay_type IN ('C' , 'W')
+                    AND is_customer_warranty_pay_type = 1
         `,
         [startDate, endDate, dealerID]
     );
