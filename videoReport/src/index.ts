@@ -15,24 +15,19 @@ export async function handler(event?: VideoReportEvent) {
     // Fore setting defaults and file upload name
     const todayYMD = (new Date()).toISOString().split('T')[0]!;
 
-    // Set input defaults
-    const startDateObj = new Date();
-    startDateObj.setMonth(startDateObj.getMonth() - 1);
-    let startDateYMD = startDateObj.toISOString().split('T')[0]!;
-    let endDateYMD = todayYMD;
+    // Set input defaults and sanitize date overrides
+    // if start date is not provided set start date to a month ago
+    let startDate = new Date();
+    startDate = event?.startDate ? new Date(event.startDate) : new Date(startDate.setMonth(startDate.getMonth() - 1));
 
-    // Sanitize date overrides
-    if (event?.startDate) {
-        startDateYMD = new Date(event.startDate).toISOString().split('T')[0] || startDateYMD;
-    }
-    if (event?.endDate) {
-        endDateYMD = new Date(event.endDate).toISOString().split('T')[0] || endDateYMD;
-    } else {
-        // set end date to yesterday
-        let date = new Date();
-        endDateYMD = new Date(date.setDate(date.getDate()-1)).toISOString().split('T')[0] || endDateYMD;
-    }
-    const endDateYMDHMS = endDateYMD + ' 23:59:59';
+    // if end date is not provided set  end date to a day ago
+    let endDate = new Date();
+    endDate = event?.endDate ? new Date(event.endDate) : new Date(endDate.setDate(endDate.getDate() - 1));
+
+    // convert dates to string
+    const startDateYMD = startDate.toISOString().split('T')[0]!;
+    const endDateYMD = endDate.toISOString().split('T')[0]!;
+    const endDateYMDHMS = new Date(endDate.setHours(23, 59, 59, 999)).toISOString()!;
 
     // Check required input
     if (!event?.dealerIDs?.length) {
