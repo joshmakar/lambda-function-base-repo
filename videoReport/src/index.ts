@@ -152,11 +152,11 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
         if (!rows.length) {
             reportRow[ReportColumns.CLOSED_ROS] = 0;
             reportRow[ReportColumns.ROS_CONTAINING_VIDEO] = 0;
-            reportRow[ReportColumns.AVERAGE_CP_LABOR] = '$0';
-            reportRow[ReportColumns.AVERAGE_CP_PARTS] = '$0';
-            reportRow[ReportColumns.AVERAGE_RO_OPEN_VALUE] = '$0';
-            reportRow[ReportColumns.AVERAGE_RO_CLOSED_VALUE] = '$0';;
-            reportRow[ReportColumns.AVERAGE_UPSELL_AMOUNT] = '$0';
+            reportRow[ReportColumns.AVERAGE_CP_LABOR] = 0;
+            reportRow[ReportColumns.AVERAGE_CP_PARTS] = 0;
+            reportRow[ReportColumns.AVERAGE_RO_OPEN_VALUE] = 0;
+            reportRow[ReportColumns.AVERAGE_RO_CLOSED_VALUE] = 0;
+            reportRow[ReportColumns.AVERAGE_UPSELL_AMOUNT] = 0;
             reportRow[ReportColumns.AVERAGE_RESPONSE_TIME] = 0;
             reportRow[ReportColumns.AVERAGE_VIDEO_LENGTH] = 0;
             reportRow[ReportColumns.OPTED_IN_ROS] = 0;
@@ -210,11 +210,11 @@ async function getReportRowForDealer(dealerDbConnInfo: SelectDealerDbInfoResult,
         // Assign all the db results to the CSV row
         reportRow[ReportColumns.CLOSED_ROS] = roIds.length;
         reportRow[ReportColumns.ROS_CONTAINING_VIDEO] = totalROsWithVideoCount;
-        reportRow[ReportColumns.AVERAGE_CP_LABOR] = '$' + avgLabor;
-        reportRow[ReportColumns.AVERAGE_CP_PARTS] = '$' + avgParts;
-        reportRow[ReportColumns.AVERAGE_RO_OPEN_VALUE] = '$' + averageROOpenValue;
-        reportRow[ReportColumns.AVERAGE_RO_CLOSED_VALUE]  = '$' + avgROClosed;
-        reportRow[ReportColumns.AVERAGE_UPSELL_AMOUNT] = '$' + averageUpsellAmount;
+        reportRow[ReportColumns.AVERAGE_CP_LABOR] = avgLabor;
+        reportRow[ReportColumns.AVERAGE_CP_PARTS] = avgParts;
+        reportRow[ReportColumns.AVERAGE_RO_OPEN_VALUE] = averageROOpenValue;
+        reportRow[ReportColumns.AVERAGE_RO_CLOSED_VALUE] = avgROClosed;
+        reportRow[ReportColumns.AVERAGE_UPSELL_AMOUNT] = averageUpsellAmount;
         reportRow[ReportColumns.AVERAGE_RESPONSE_TIME] = averageSmsResponseTimeInSeconds ?
             moment.utc(averageSmsResponseTimeInSeconds * 1000).format("HH:mm:ss") :
             0;
@@ -791,11 +791,11 @@ interface ReportRow {
     [ReportColumns.DEALER_CODE]?: string;
     [ReportColumns.CLOSED_ROS]?: number;
     [ReportColumns.ROS_CONTAINING_VIDEO]?: number;
-    [ReportColumns.AVERAGE_CP_LABOR]?: string;
-    [ReportColumns.AVERAGE_CP_PARTS]?: string;
-    [ReportColumns.AVERAGE_RO_OPEN_VALUE]?: string;
-    [ReportColumns.AVERAGE_RO_CLOSED_VALUE]?: string;
-    [ReportColumns.AVERAGE_UPSELL_AMOUNT]?: string;
+    [ReportColumns.AVERAGE_CP_LABOR]?: number;
+    [ReportColumns.AVERAGE_CP_PARTS]?: number;
+    [ReportColumns.AVERAGE_RO_OPEN_VALUE]?: number;
+    [ReportColumns.AVERAGE_RO_CLOSED_VALUE]?: number;
+    [ReportColumns.AVERAGE_UPSELL_AMOUNT]?: number;
     [ReportColumns.AVERAGE_RESPONSE_TIME]?: string | number;
     [ReportColumns.AVERAGE_VIDEO_LENGTH]?: string | number;
     [ReportColumns.OPTED_IN_ROS]?: number;
