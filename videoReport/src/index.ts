@@ -20,7 +20,7 @@ export async function handler(event?: VideoReportEvent) {
     let startDate = new Date();
     startDate = event?.startDate ? new Date(event.startDate) : new Date(startDate.setMonth(startDate.getMonth() - 1));
 
-    // if end date is not provided set  end date to a day ago
+    // if end date is not provided set end date to a day ago
     let endDate = new Date();
     endDate = event?.endDate ? new Date(event.endDate) : new Date(endDate.setDate(endDate.getDate() - 1));
 
