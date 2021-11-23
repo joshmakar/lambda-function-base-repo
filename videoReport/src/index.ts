@@ -228,6 +228,7 @@ async function getReportRowForDealerRoLevel(dealerDbConnInfo: SelectDealerDbInfo
                 [ReportColumnsROLevel.PHOTO_NO]: 0,
                 [ReportColumnsROLevel.RESPONSE_TIME]: 0,
                 [ReportColumnsROLevel.EMAIL_SENT_NO]: 0,
+                [ReportColumnsROLevel.EMAIL_RECEIVED_NO]: 'N/A',
                 [ReportColumnsROLevel.EMAIL_OPENED_NO]: 0,
                 [ReportColumnsROLevel.VIDEO_URLS]: '',
             });
@@ -296,6 +297,7 @@ async function getReportRowForDealerRoLevel(dealerDbConnInfo: SelectDealerDbInfo
                     moment.utc(averageSmsResponseTimeInSeconds[record.roId]! * 1000).format("HH:mm:ss") :
                     0,
                 [ReportColumnsROLevel.EMAIL_SENT_NO]: communicationData && communicationData.length ? communicationData[0]!.emailSentNo : 0,
+                [ReportColumnsROLevel.EMAIL_RECEIVED_NO]: 'N/A',
                 [ReportColumnsROLevel.EMAIL_OPENED_NO]: communicationData && communicationData.length ? communicationData[0]!.emailOpenedNo : 0,
                 [ReportColumnsROLevel.VIDEO_URLS]: mediaData && mediaData.length ? mediaData[0]!.videoURLs : ''
             });
@@ -314,8 +316,8 @@ async function getReportRowForDealerRoLevel(dealerDbConnInfo: SelectDealerDbInfo
 /**
  * Concurrently executes all aggregate queries for a dealer. This function should also be called concurrently for each dealer (e.g. using Promise.all).
  */
-async function getReportRowForDealerRollUp(dealerDbConnInfo: SelectDealerDbInfoResult, startDate: string, endDate: string): Promise<ReportRow> {
-    const reportRow: ReportRow = {
+async function getReportRowForDealerRollUp(dealerDbConnInfo: SelectDealerDbInfoResult, startDate: string, endDate: string): Promise<ReportRowRollUp> {
+    const reportRow: ReportRowRollUp = {
         [ReportColumnsRollUp.VENDOR_NAME]: 'Unotifi',
         [ReportColumnsRollUp.DEALER_NAME]: dealerDbConnInfo.dealerName || '',
         [ReportColumnsRollUp.DEALER_CODE]: dealerDbConnInfo.internal_code
@@ -1262,6 +1264,7 @@ enum ReportColumnsROLevel {
     PHOTO_NO = '# of Photos Sent',
     RESPONSE_TIME = 'Response Time',
     EMAIL_SENT_NO = '# of Email Sent',
+    EMAIL_RECEIVED_NO = '# of Email Received',
     EMAIL_OPENED_NO = '# of Email Opened/Microsite Clicked',
     VIDEO_URLS = 'Microsite Link to Tech Video'
 }
@@ -1405,6 +1408,7 @@ interface ReportRowROLevel {
     [ReportColumnsROLevel.PHOTO_NO]?: number;
     [ReportColumnsROLevel.RESPONSE_TIME]?: string | number;
     [ReportColumnsROLevel.EMAIL_SENT_NO]?: number;
+    [ReportColumnsROLevel.EMAIL_RECEIVED_NO]?: string;
     [ReportColumnsROLevel.EMAIL_OPENED_NO]?: number;
     [ReportColumnsROLevel.VIDEO_URLS]?: string;
 }
@@ -1412,7 +1416,7 @@ interface ReportRowROLevel {
 /**
  * Represents a row of the output sheet file
  */
-interface ReportRow {
+interface ReportRowRollUp {
     [ReportColumnsRollUp.VENDOR_NAME]?: string;
     [ReportColumnsRollUp.DEALER_NAME]?: string;
     [ReportColumnsRollUp.DEALER_CODE]?: string;
