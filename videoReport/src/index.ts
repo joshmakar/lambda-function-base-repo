@@ -254,7 +254,7 @@ async function getReportRowForDealerRoLevel(dealerDbConnInfo: SelectDealerDbInfo
             laborDataQuery(dealerDbConn, strROIds),
             mediaDataQuery(dealerDbConn, strROIds),
             communicationDataQuery(dealerDbConn, strROIds),
-            getSmsResponseTimeInSecondsPerRO(dealerDbConn, strROIds)
+            getAverageSmsResponseTimeInSeconds(dealerDbConn, strROIds, true)
         ])
 
         // extract repair orders data
@@ -372,7 +372,6 @@ async function getReportRowForDealerRollUp(dealerDbConnInfo: SelectDealerDbInfoR
             averageROOpenValue,
             avgROClosed,
             averageUpsellAmount,
-            averageSmsResponseTimeInSeconds,
             averageVideoLength,
             numberOptedInROs,
             numberOptedOutROs,
@@ -386,7 +385,6 @@ async function getReportRowForDealerRollUp(dealerDbConnInfo: SelectDealerDbInfoR
             averageROOpenValueQuery(dealerDbConn, strROIds),
             avgROClosedQuery(dealerDbConn, strROIds),
             averageUpsellAmountQuery(dealerDbConn, strROIds),
-            getAverageSmsResponseTimeInSeconds(dealerDbConn, strROIds),
             averageVideoLengthQuery(dealerDbConn, strROIds),
             numberOptedInROsQuery(dealerDbConn, strROIds),
             numberOptedOutROsQuery(dealerDbConn, strROIds),
@@ -394,6 +392,10 @@ async function getReportRowForDealerRollUp(dealerDbConnInfo: SelectDealerDbInfoR
             averagePhotoSentQuery(dealerDbConn, strROIds),
             averageVideoViewsQuery(dealerDbConn, strROIds)
         ])
+
+        // using destructuring with Promise.all requires to receive the same result type for each method ({ [key: string]: number; })
+        // since getAverageSmsResponseTimeInSeconds returns other type, use a separate call
+        const averageSmsResponseTimeInSeconds = await getAverageSmsResponseTimeInSeconds(dealerDbConn, strROIds, false);
 
         // Assign all the db results to the CSV row
         reportRow[ReportColumnsRollUp.CLOSED_ROS] = roIds.length;
@@ -403,9 +405,9 @@ async function getReportRowForDealerRollUp(dealerDbConnInfo: SelectDealerDbInfoR
         reportRow[ReportColumnsRollUp.AVERAGE_RO_OPEN_VALUE] = averageROOpenValue;
         reportRow[ReportColumnsRollUp.AVERAGE_RO_CLOSED_VALUE] = avgROClosed;
         reportRow[ReportColumnsRollUp.AVERAGE_UPSELL_AMOUNT] = averageUpsellAmount;
-        reportRow[ReportColumnsRollUp.AVERAGE_RESPONSE_TIME] = averageSmsResponseTimeInSeconds ?
-            moment.utc(averageSmsResponseTimeInSeconds * 1000).format("HH:mm:ss") :
-            0;
+        reportRow[ReportColumnsRollUp.AVERAGE_RESPONSE_TIME] = averageSmsResponseTimeInSeconds && averageSmsResponseTimeInSeconds['0'] ?
+            moment.utc(averageSmsResponseTimeInSeconds['0'] * 1000).format("HH:mm:ss") :
+            0,
         reportRow[ReportColumnsRollUp.AVERAGE_VIDEO_LENGTH] = averageVideoLength ?
             moment.utc(averageVideoLength * 1000).format("HH:mm:ss") :
             0;
@@ -637,103 +639,6 @@ async function communicationDataQuery(
     );
 
     return result && result[0] ? result : []
-}
-
-async function getSmsResponseTimeInSecondsPerRO(
-    conn: mysql.Connection,
-    roIds: string
-) {
-    const textEvents: TextEventsPerRO = await conn.query(
-        `
-            SELECT DISTINCT
-                auto_repair_order.id AS roId, 
-                auto_recipient.id AS recipientId,
-                auto_event.id AS eventId,
-                auto_event.sent_date AS eventSentDate,
-                auto_event.type AS eventType,
-                auto_event.generated_from AS eventGeneratedFrom,
-                auto_media_file.id AS mediaFileId
-            FROM
-                auto_vehicle
-                    INNER JOIN
-                auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
-                    AND auto_repairauto_vehicle_c.deleted = 0
-                    INNER JOIN
-                auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
-                    INNER JOIN
-                auto_recipient ON auto_recipient.auto_vehicle_id_c = auto_vehicle.id
-                    AND auto_recipient.deleted = 0
-                    INNER JOIN
-                auto_event_to_recipient_c ON auto_recipient.id = auto_event_to_recipient_c.auto_eventa735cipient_ida
-                    AND auto_event_to_recipient_c.deleted = 0
-                    INNER JOIN
-                auto_event ON auto_event.id = auto_event_to_recipient_c.auto_eventfa83o_event_idb
-                    AND auto_event.deleted = 0
-                    LEFT JOIN
-                auto_media_file ON auto_event.id = auto_media_file.event_id
-            WHERE
-                    auto_repair_order.id IN ` + roIds + `
-              AND auto_event.sent_date BETWEEN auto_repair_order.service_open_date AND ADDTIME(auto_repair_order.service_closed_date, '23:59:59')
-              AND auto_event.body_type = 'Text'
-              AND ((auto_event.generated_from = 'Comunicator'
-                AND auto_event.type = 'Not-Pending'
-                AND auto_media_file.file_guid IS NOT NULL)
-                OR (auto_event.generated_from = 'Reply'
-                    AND auto_event.type = 'Reply'))
-            ORDER BY auto_repair_order.id, auto_event.sent_date
-        `
-    );
-
-    const outboundTextEvents: { [key: string]: string } = {};
-    const inboundTextEvents: { [key: string]: string } = {};
-    let responseTimesInSeconds: { [key: string]: number[] } = {};
-    let averageResponseTimesInSeconds: { [key: string]: number } = {};
-
-    // Process the text events in order to find the average response time
-    textEvents.forEach((textEvent, index) => {
-        const roId = textEvent.roId ?? '';
-
-        // Find outbound text events
-        if (textEvent.eventGeneratedFrom == 'Comunicator' && textEvent.eventType == 'Not-Pending') {
-            outboundTextEvents[roId] = textEvent.eventSentDate;
-        }
-
-        // Find inbound text events
-        if (textEvent.eventGeneratedFrom == 'Reply' && textEvent.eventType == 'Reply') {
-            inboundTextEvents[roId] = textEvent.eventSentDate;
-        }
-
-        // Calculate response times
-        if (outboundTextEvents[roId] && inboundTextEvents[roId]) {
-            const outboundTextEventDate = new Date(outboundTextEvents[roId]!);
-            const inboundTextEventDate = new Date(inboundTextEvents[roId]!);
-
-            // Check diff only for consecutive outbound/inbound pair
-            if (
-                index > 0 &&
-                textEvents[index - 1]!.eventGeneratedFrom == 'Comunicator' &&
-                textEvents[index - 1]!.mediaFileId &&
-                textEvent.eventGeneratedFrom == 'Reply' &&
-                textEvents[index - 1]!.roId == textEvent.roId
-            ) {
-                // ignore the responses greater than one day
-                const diff = getDateDifferenceInSeconds(outboundTextEventDate, inboundTextEventDate);
-                if (diff < 86400) {
-                    if (!responseTimesInSeconds.hasOwnProperty(roId)) {
-                        responseTimesInSeconds[roId] = [];
-                    }
-                    responseTimesInSeconds[roId]!.push(diff);
-                }
-            }
-        }
-    });
-
-    // get the average response time for each repair order
-    Object.entries(responseTimesInSeconds).forEach(([key, value]) =>
-        averageResponseTimesInSeconds[key] = average(value)
-    );
-
-    return averageResponseTimesInSeconds && Object.keys(averageResponseTimesInSeconds).length ? averageResponseTimesInSeconds : {};
 }
 
 async function closedRORollUpQuery(conn: mysql.Connection, dealerID: string, startDate: string, endDate: string) {
@@ -1054,11 +959,13 @@ async function averagePhotoSentQuery(
 
 async function getAverageSmsResponseTimeInSeconds(
     conn: mysql.Connection,
-        roIds: string
+    roIds: string,
+    isPerRo: boolean
 ) {
     const textEvents: TextEvents = await conn.query(
         `
             SELECT DISTINCT
+                auto_repair_order.id AS roId, 
                 auto_recipient.id AS recipientId,
                 auto_event.id AS eventId,
                 auto_event.sent_date AS eventSentDate,
@@ -1092,50 +999,72 @@ async function getAverageSmsResponseTimeInSeconds(
                 AND auto_media_file.file_guid IS NOT NULL)
                 OR (auto_event.generated_from = 'Reply'
                     AND auto_event.type = 'Reply'))
-            ORDER BY auto_recipient.id, auto_event.sent_date
+            ORDER BY ` + (isPerRo ? 'auto_repair_order.id' : 'auto_recipient.id') + `, auto_event.sent_date
         `
     );
 
     const outboundTextEvents: { [key: string]: string } = {};
     const inboundTextEvents: { [key: string]: string } = {};
-    const responseTimesInSeconds: number[] = [];
+    let responseTimesInSeconds: { [key: string]: number[] } = {};
+    let averageResponseTimesInSeconds: { [key: string]: number } = {};
 
     // Process the text events in order to find the average response time
     textEvents.forEach((textEvent, index) => {
-        const recipientId = textEvent.recipientId ?? '';
+        const groupBy: string = isPerRo ?
+            textEvent.roId ?? '' :
+                textEvent.recipientId ?? '';
 
         // Find outbound text events
         if (textEvent.eventGeneratedFrom == 'Comunicator' && textEvent.eventType == 'Not-Pending') {
-            outboundTextEvents[recipientId] = textEvent.eventSentDate;
+            outboundTextEvents[groupBy] = textEvent.eventSentDate;
         }
 
         // Find inbound text events
         if (textEvent.eventGeneratedFrom == 'Reply' && textEvent.eventType == 'Reply') {
-            inboundTextEvents[recipientId] = textEvent.eventSentDate;
+            inboundTextEvents[groupBy] = textEvent.eventSentDate;
         }
 
         // Calculate response times
-        if (outboundTextEvents[recipientId] && inboundTextEvents[recipientId]) {
-            const outboundTextEventDate = new Date(outboundTextEvents[recipientId]!);
-            const inboundTextEventDate = new Date(inboundTextEvents[recipientId]!);
+        if (outboundTextEvents[groupBy] && inboundTextEvents[groupBy]) {
+            const outboundTextEventDate = new Date(outboundTextEvents[groupBy]!);
+            const inboundTextEventDate = new Date(inboundTextEvents[groupBy]!);
 
             // Check diff only for consecutive outbound/inbound pair
             if (
                 index > 0 &&
                 textEvents[index - 1]!.eventGeneratedFrom == 'Comunicator' &&
                 textEvents[index - 1]!.mediaFileId &&
-                textEvent.eventGeneratedFrom == 'Reply'
+                textEvent.eventGeneratedFrom == 'Reply' &&
+                (!isPerRo || textEvents[index - 1]!.roId == textEvent.roId)
             ) {
                 // ignore the responses greater than one day
                 const diff = getDateDifferenceInSeconds(outboundTextEventDate, inboundTextEventDate);
                 if (diff < 86400) {
-                    responseTimesInSeconds.push(diff);
+                    if (isPerRo) {
+                        if (!responseTimesInSeconds.hasOwnProperty(groupBy)) {
+                            responseTimesInSeconds[groupBy] = [];
+                        }
+
+                        responseTimesInSeconds[groupBy]!.push(diff);
+                    } else {
+                        // put a default key = 0
+                        if (!responseTimesInSeconds.hasOwnProperty('0')) {
+                            responseTimesInSeconds['0'] = [];
+                        }
+
+                        responseTimesInSeconds['0']!.push(diff);
+                    }
                 }
             }
         }
     });
 
-    return responseTimesInSeconds.length ? average(responseTimesInSeconds) : 0;
+    // get the average response time for each item
+    Object.entries(responseTimesInSeconds).forEach(([key, value]) =>
+        averageResponseTimesInSeconds[key] = average(value)
+    );
+
+    return averageResponseTimesInSeconds && Object.keys(averageResponseTimesInSeconds).length ? averageResponseTimesInSeconds : {};
 }
 
 async function averageVideoLengthQuery(
@@ -1354,22 +1283,12 @@ type CommunicationQueryResult = {
 
 // Average Response Time Result
 type TextEvents = {
+    roId: string
+    recipientId: string
     eventId: string
     eventSentDate: string
     eventType: string
     eventGeneratedFrom: string
-    recipientId: string
-    mediaFileId: string
-}[];
-
-// Response Time Result per RO
-type TextEventsPerRO = {
-    roId: string,
-    eventId: string,
-    eventSentDate: string,
-    eventType: string,
-    eventGeneratedFrom: string,
-    recipientId: string,
     mediaFileId: string
 }[];
 
