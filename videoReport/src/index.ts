@@ -1215,7 +1215,7 @@ enum ReportColumnsRollUp {
     OPTED_OUT_ROS = '# of Opted Out RO\'s',
     AVERAGE_SMS_SENT_TO_CUSTOMER = 'Average # of SMS Sent to Customer',
     AVERAGE_PHOTOS_SENT_TO_CUSTOMER = 'Average # of Photo\'s Sent to Customer',
-    AVERAGE_EMAIL_OPENED = 'Average # of Email Opened/Microsite Clicked'
+    AVERAGE_EMAIL_OPENED = '# of Times Video was Viewed'
 }
 
 /////////////////////////////////////////////////
