@@ -10,5 +10,9 @@ const dealerIds = [
 ];
 
 // Invoke the lambda entrypoint for Parker Audi and Audi North Park
-handler({ dealerIDs: dealerIds })
+handler(
+    {
+        dealerIDs: dealerIds,
+        dealerGroupName: "Audi"
+    })
     .then(resp => console.log('Lambda fn completed with response:', resp));
