@@ -34,7 +34,10 @@ jobs:
       # For some reason, the lambda step fails if there are symlinks in the artifact
       - name: Remove symlinks
         run: rm -rf node_modules/.bin
-      
+
+      - name: Remove symlinks from fstream
+        run: rm -rf node_modules/fstream/node_modules/.bin
+
       - name: Typescript Compile
         run: npx tsc -p tsconfig-build.json
 
