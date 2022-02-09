@@ -553,7 +553,7 @@ async function mediaDataQuery(
         `
             SELECT 
                 auto_repair_order.id as roId,
-                auto_repair_order.has_videos AS hasVideo,
+                COUNT(IF(auto_media_file.file_guid IS NOT NULL AND auto_media_file.file_length IS NOT NULL, auto_media_file.id, NULL)) > 0 AS hasVideo,
                 COUNT(DISTINCT IF(auto_media_file.file_guid IS NOT NULL AND auto_media_file.file_length IS NOT NULL, auto_media_file.id, NULL)) AS videoNo,
                 COUNT(DISTINCT IF(auto_media_file.file_guid IS NOT NULL AND auto_media_file.file_length IS NOT NULL, auto_media_file_view.id, NULL)) AS viewNo,
                 COUNT(DISTINCT IF(auto_media_file.id IS NOT NULL AND auto_media_file.file_guid IS NULL, auto_media_file.id, NULL)) AS photoNo,
@@ -689,10 +689,35 @@ async function countROWithVideosQuery(
             SELECT
                 COUNT(DISTINCT auto_repair_order.id) AS total
             FROM
-                auto_repair_order
+                 auto_vehicle
+                    INNER JOIN
+                auto_repairauto_vehicle_c ON auto_repairauto_vehicle_c.auto_repai4169vehicle_ida = auto_vehicle.id
+                    AND auto_repairauto_vehicle_c.deleted = 0
+                    INNER JOIN
+                auto_repair_order ON auto_repairauto_vehicle_c.auto_repai527cr_order_idb = auto_repair_order.id
+                    INNER JOIN
+                auto_recipient ON auto_recipient.auto_vehicle_id_c = auto_vehicle.id
+                    AND auto_recipient.deleted = 0
+                    INNER JOIN
+                auto_event_to_recipient_c ON auto_recipient.id = auto_event_to_recipient_c.auto_eventa735cipient_ida
+                    AND auto_event_to_recipient_c.deleted = 0
+                    INNER JOIN
+                auto_event ON auto_event.id = auto_event_to_recipient_c.auto_eventfa83o_event_idb
+                    AND auto_event.deleted = 0
+                    INNER JOIN
+                users ON auto_event.modified_user_id = users.id
+                    INNER JOIN
+                auto_contact_person ON auto_contact_person.user_id_c = users.id
+                    AND auto_contact_person.deleted = 0
+                    LEFT JOIN
+                auto_media_file ON auto_event.id = auto_media_file.event_id
+                    AND auto_media_file.date_entered BETWEEN auto_repair_order.service_open_date AND ADDTIME(auto_repair_order.service_closed_date, '23:59:59')
             WHERE
-                auto_repair_order.has_videos = 1 
-                AND auto_repair_order.id IN ` + roIds
+                auto_repair_order.id IN ` + roIds + ` 
+                AND auto_event.body_type = 'Text'
+                AND auto_event.generated_from = 'Comunicator'
+                AND auto_event.type = 'Not-Pending'
+                AND auto_media_file.file_length IS NOT NULL`
     );
 
     return countResult && countResult[0] && countResult[0].total ? countResult[0].total : 0;
