@@ -588,7 +588,7 @@ async function mediaDataQuery(
                 auto_repair_order.id IN ` + roIds + `
                     AND auto_event.body_type = 'Text'
                     AND auto_event.generated_from = 'Comunicator'
-                    AND auto_event.type = 'Not-Pending'
+                    AND auto_event.type IN ('Not-Pending', 'Pending')
             GROUP BY auto_repair_order.id
         `
     );
@@ -716,7 +716,7 @@ async function countROWithVideosQuery(
                 auto_repair_order.id IN ` + roIds + ` 
                 AND auto_event.body_type = 'Text'
                 AND auto_event.generated_from = 'Comunicator'
-                AND auto_event.type = 'Not-Pending'
+                AND auto_event.type IN ('Not-Pending', 'Pending')
                 AND auto_media_file.file_length IS NOT NULL`
     );
 
