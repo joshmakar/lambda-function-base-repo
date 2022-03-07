@@ -1,9 +1,9 @@
 'use strict'
 
 // Require promise-mysql
-const promise = require('promise-mysql');
+import promise from 'promise-mysql';
 
-const toyotaRecallReports = async (payload, context, callback) => {
+const toyotaRecallReports = async (payload: any, context: any, callback: any) => {
     console.log(`Function toyotaRecallReports called with payload ${JSON.stringify(payload)}`);
 
     const result = await promise.createConnection({
@@ -12,10 +12,15 @@ const toyotaRecallReports = async (payload, context, callback) => {
         port: 3306,
         password: '8vFN^xY%#eeRV^87GbsW',
         database: 'unotifi_web_application',
-        timeout: 60000,
+        timeout: 6000,
     });
 
-    var test = await result.query('SELECT * FROM users LIMIT 1');
+    try {
+        console.log('trying');
+        var test: any = await result.query('SELECT * FROM users LIMIT 1');
+    } catch (error) {
+        var test: any = 'fail';
+    }
 
     callback(null, {
         statusCode: 201,
@@ -31,3 +36,7 @@ const toyotaRecallReports = async (payload, context, callback) => {
 module.exports = {
     toyotaRecallReports,
 }
+
+toyotaRecallReports({}, {}, (err: any, res: any) => {
+    console.log('response', res);
+});
