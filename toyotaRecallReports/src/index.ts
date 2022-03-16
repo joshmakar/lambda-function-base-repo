@@ -1,31 +1,52 @@
-'use strict'
-
 // Require promise-mysql
 import promise from 'promise-mysql';
+import {
+    getOpportunitiesTextedCalledQuery,
+    getAppointmentsQuery,
+    getRepairOrderRevenueQuery,
+    getOpportunitiesContactedQuery,
+} from './queries/temp';
+
+if (process.env['NODE_ENV'] !== 'production') {
+    require('dotenv').config();
+}
 
 const toyotaRecallReports = async (payload: any, context: any, callback: any) => {
     console.log(`Function toyotaRecallReports called with payload ${JSON.stringify(payload)}`);
 
-    const result = await promise.createConnection({
-        host: 'unotifi-web-application.chkwbdrblapr.us-east-1.rds.amazonaws.com',
-        user: 'unotifi_web_stag',
-        port: 3306,
-        password: '8vFN^xY%#eeRV^87GbsW',
-        database: 'unotifi_web_application',
+    const dbConnection = await promise.createConnection({
+        host: payload.host,
+        user: payload.user,
+        port: payload.port ?? 3306,
+        password: payload.password,
+        database: payload.database,
         timeout: 6000,
     });
 
+    let results: any[] = [];
+
     try {
         console.log('trying');
-        var test: any = await result.query('SELECT * FROM users LIMIT 1');
+        const dealerIntegralinkCode = 99999;
+        const startDate = new Date();
+        startDate.setFullYear(startDate.getFullYear() - 2);
+        const endDate = new Date();
+
+        results.push(await dbConnection.query(getOpportunitiesContactedQuery(dealerIntegralinkCode, startDate, endDate)));
+        results.push(await dbConnection.query(getOpportunitiesTextedCalledQuery(dealerIntegralinkCode, startDate, endDate)));
+        results.push(await dbConnection.query(getAppointmentsQuery(dealerIntegralinkCode, startDate, endDate)));
+        results.push(await dbConnection.query(getRepairOrderRevenueQuery(dealerIntegralinkCode, startDate, endDate)));
     } catch (error) {
-        var test: any = 'fail';
+        console.log(error);
+    } finally {
+        // Close the db connection, even if there's an error. This avoids a hanging process.
+        await dbConnection.end();
     }
 
     callback(null, {
         statusCode: 201,
         body: JSON.stringify({
-            message: test
+            message: results
         }),
         headers: {
             'X-Custom-Header': 'ASDF'
