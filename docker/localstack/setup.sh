@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 REGION=us-east-1
 STAGE=test
@@ -9,7 +9,7 @@ fail () {
   exit $1
 }
 
-alias awslocal="aws --endpoint-url=http://localhost:4566"
+AWS_LOCAL="aws --endpoint-url=http://localhost:4566"
 
 # Create zip file without adding parent folder to zip
 echo "Creating ${FUNCTION_NAME}.zip file"
@@ -17,12 +17,12 @@ rm -f ${FUNCTION_NAME}.zip
 (cd ${FUNCTION_NAME}/build && zip -r -q ../../${FUNCTION_NAME}.zip .)
 
 # Check if lambda function exists
-awslocal lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
+$AWS_LOCAL lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
   # If it does, update it
   if [ 0 -eq $? ]; then
     echo "Lambda '${FUNCTION_NAME}' exists. Updating it..."
 
-    awslocal lambda update-function-code \
+    $AWS_LOCAL lambda update-function-code \
     --function-name ${FUNCTION_NAME} \
     --zip-file fileb://${FUNCTION_NAME}.zip
 
@@ -31,7 +31,7 @@ awslocal lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
   else
     echo "Lambda '${FUNCTION_NAME}' does not exist. Creating it..."
 
-    awslocal lambda create-function \
+    $AWS_LOCAL lambda create-function \
         --region ${REGION} \
         --function-name ${FUNCTION_NAME} \
         --runtime nodejs8.10 \
@@ -42,7 +42,7 @@ awslocal lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
 
     [ $? -eq 1 ] && fail 1 "Failed: AWS / lambda / create-function"
 
-    LAMBDA_ARN=$(awslocal lambda list-functions --query "Functions[?FunctionName==\`${FUNCTION_NAME}\`].FunctionArn" --output text --region ${REGION})
+    LAMBDA_ARN=$($AWS_LOCAL lambda list-functions --query "Functions[?FunctionName==\`${FUNCTION_NAME}\`].FunctionArn" --output text --region ${REGION})
   fi
 
 # Remove zip file after lambda function is created/updated

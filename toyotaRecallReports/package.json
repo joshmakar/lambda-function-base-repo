@@ -4,8 +4,6 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start:build": "tsc -w",
-    "start": "concurrently npm:start:*",
     "dev": "npm run development",
     "development": "webpack --mode development",
     "prod": "npm run production",
