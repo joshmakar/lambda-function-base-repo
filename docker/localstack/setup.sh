@@ -4,6 +4,11 @@ REGION=us-east-1
 STAGE=test
 FUNCTION_NAME=toyotaRecallReports
 
+# Source the ".env" file so the environment variables are available
+if [ -f .env ]; then
+  source .env
+fi
+
 fail () {
   echo $2
   exit $1
@@ -23,8 +28,8 @@ $AWS_LOCAL lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
     echo "Lambda '${FUNCTION_NAME}' exists. Updating it..."
 
     $AWS_LOCAL lambda update-function-code \
-    --function-name ${FUNCTION_NAME} \
-    --zip-file fileb://${FUNCTION_NAME}.zip
+      --function-name ${FUNCTION_NAME} \
+      --zip-file fileb://${FUNCTION_NAME}.zip
 
     [ $? -eq 1 ] && fail 1 "Failed: AWS / lambda / update-function-code"
   # Else, create it
@@ -32,13 +37,13 @@ $AWS_LOCAL lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
     echo "Lambda '${FUNCTION_NAME}' does not exist. Creating it..."
 
     $AWS_LOCAL lambda create-function \
-        --region ${REGION} \
-        --function-name ${FUNCTION_NAME} \
-        --runtime nodejs8.10 \
-        --handler index.${FUNCTION_NAME} \
-        --memory-size 128 \
-        --zip-file fileb://${FUNCTION_NAME}.zip \
-        --role arn:aws:iam::123456:role/irrelevant
+      --region ${REGION} \
+      --function-name ${FUNCTION_NAME} \
+      --runtime nodejs8.10 \
+      --handler index.${FUNCTION_NAME} \
+      --memory-size 128 \
+      --zip-file fileb://${FUNCTION_NAME}.zip \
+      --role arn:aws:iam::123456:role/irrelevant
 
     [ $? -eq 1 ] && fail 1 "Failed: AWS / lambda / create-function"
 
@@ -47,3 +52,13 @@ $AWS_LOCAL lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
 
 # Remove zip file after lambda function is created/updated
 rm -f ${FUNCTION_NAME}.zip
+
+# Add environment variables to the lambda function
+echo "Adding environment variables to the lambda function"
+
+$AWS_LOCAL lambda update-function-configuration --function-name ${FUNCTION_NAME} \
+  --environment '{"Variables": {
+    "UNOTIFI_COM_INDEX_DB_HOST": "'${UNOTIFI_COM_INDEX_DB_HOST}'",
+    "UNOTIFI_COM_INDEX_DB_USER": "'${UNOTIFI_COM_INDEX_DB_USER}'",
+    "UNOTIFI_COM_INDEX_DB_PASS": "'${UNOTIFI_COM_INDEX_DB_PASS}'"
+  }}'
