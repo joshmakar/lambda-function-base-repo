@@ -111,11 +111,11 @@ startDate.setFullYear(startDate.getFullYear() - 2);
 const endDate = new Date();
 
 const event = {
-  // dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f'],
+  dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f'],
   startDate: startDate,
   endDate: endDate,
 };
 
-toyotaRecallReports(event, {}, (err: any, res: any) => {
-  console.log('response', res);
+toyotaRecallReports(event, {}, (error: any, response: any) => {
+  return response ? console.log('Response:', response) : console.log('Error:', error);
 });
