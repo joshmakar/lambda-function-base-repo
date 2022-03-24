@@ -25,7 +25,7 @@ export const getOpportunitiesContactedQuery = (dealerIntegralinkCode: string|num
   const endDateString: string = toUTCDateTimeString(endDate);
 
   return `SELECT
-        auto_campaign.name AS auto_campaign_name,
+        auto_campaign.name AS autoCampaignName,
         COUNT(DISTINCT opportunities.id) AS totalOpportunities,
         COUNT(last_contacted_date) AS totalOpportunitiesContacted,
         COUNT(
@@ -85,7 +85,7 @@ export const getOpportunitiesTextedCalledQuery = (dealerIntegralinkCode: string|
   const endDateString: string = toUTCDateTimeString(endDate);
 
   return `SELECT
-        auto_campaign.name AS auto_campaign_name,
+        auto_campaign.name AS autoCampaignName,
         SUM(IF(tasks.name = 'Text', 1, 0)) AS totalOpportunitiesTexted,
         SUM(IF(tasks.name = 'Call', 1, 0)) AS totalOpportunitiesCalled
     FROM
@@ -138,7 +138,7 @@ export const getAppointmentsQuery = (dealerIntegralinkCode: string|number, start
   const endDateString: string = toUTCDateTimeString(endDate);
 
   return `SELECT
-        auto_campaign.name AS auto_campaign_name,
+        auto_campaign.name AS autoCampaignName,
         COUNT(opportunities.last_contacted_date) AS totalAppointments,
         SUM(IF(auto_appointment.appointment_with_ade_ro = 1 OR auto_appointment.appointment_with_ro = 1, 1, 0)) AS totalAppointmentsArrived
     FROM
@@ -190,7 +190,7 @@ export const getRepairOrderRevenueQuery = (dealerIntegralinkCode: string|number,
   const endDateString: string = toUTCDateTimeString(endDate);
 
   return `SELECT DISTINCT
-        auto_campaign.name AS auto_campaign_name,
+        auto_campaign.name AS autoCampaignName,
         COUNT(auto_repair_order.id) AS roNo,
         SUM(REPLACE(repair_order_amount_total, ',', '')) AS roAmount
     FROM

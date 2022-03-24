@@ -45,9 +45,7 @@ const toyotaRecallReports = async (event: any, context: any, callback: any) => {
 
   const safeDealerIds = event.dealershipIds.map((id: any) => mysql.escape(id));
 
-  const dealershipsConnections: SelectDealerDBInfoResult[] = (
-    await indexDbConn.query(getDealershipsDBInfo(safeDealerIds))
-  ) as SelectDealerDBInfoResult[];
+  const dealershipsConnections: SelectDealerDBInfoResult[] = await indexDbConn.query(getDealershipsDBInfo(safeDealerIds));
 
   indexDbConn.end();
 
@@ -61,12 +59,62 @@ const toyotaRecallReports = async (event: any, context: any, callback: any) => {
       return getReportRowForDealerRoLevel(connection, startDate, endDate);
     })
   );
+  const resultsSuccess: any[] = [];
+  results[0]!.forEach((result: any) => {
+    // console.log('result', result);
+    const resultSuccess: any = {
+      dealershipName: result.dealershipName,
+      autoCampaignName: result.autoCampaignName,
+      totalOpportunities: result.totalOpportunities ?? 0,
+      totalOpportunitiesContacted: result.totalOpportunitiesContacted ?? 0,
+      totalOpportunitiesTexted: result.totalOpportunitiesTexted ?? 0,
+      totalOpportunitiesCalled: result.totalOpportunitiesCalled ?? 0,
+      // percentageOfOpportunitiesContacted: '',
+      // percentAppointments: '',
+      totalAppointments: result.totalAppointments ?? 0,
+      totalAppointmentsArrived: result.totalAppointmentsArrived ?? 0,
+      soldVehicles: result.soldVehicles ?? 0,
+      totalRepairOrders: result.roNo ?? 0,
+      revenue: result.roAmount ?? 0,
+      // averageROValue: '',
+      // showRate: '',
+    };
+    resultsSuccess.push(resultSuccess);
+  });
+
+  const createCsvWriter = require('csv-writer').createObjectCsvWriter;
+  const fileInfo = 'toyotaRecallReports';
+
+  const csvWriterSuccessResults = createCsvWriter({
+    path: `${fileInfo}-results_success-makar.csv`,
+    header: [
+      { id: 'dealershipName', title: 'Dealership Name' },
+      { id: 'autoCampaignName', title: 'Campaign Name' },
+      { id: 'totalOpportunities', title: 'Total Opportunities' },
+      { id: 'totalOpportunitiesContacted', title: 'Total Opportunities Contacted' },
+      { id: 'totalOpportunitiesTexted', title: 'Total Opportunities Texted' },
+      { id: 'totalOpportunitiesCalled', title: 'Total Opportunities Called' },
+      // { id: 'percentageOfOpportunitiesContacted', title: 'Percentage of Opportunities Contacted' },
+      // { id: 'percentAppointments', title: 'Percent Appointments' },
+      { id: 'totalAppointments', title: 'Total Appointments' },
+      { id: 'totalAppointmentsArrived', title: 'Total Appointments Arrived' },
+      { id: 'totalRepairOrders', title: 'Total Repair Orders' },
+      { id: 'revenue', title: 'Revenue' },
+      // { id: 'averageROValue', title: 'Average RO Value' },
+      // { id: 'showRate', title: 'Show Rate' },
+      { id: 'soldVehicles', title: 'Sold Vehicles' },
+    ]
+  });
+
+  csvWriterSuccessResults.writeRecords(resultsSuccess)
+    .then(() => {
+        console.log('Saved results_success.csv');
+    });
 
   callback(null, {
     statusCode: 201,
-    body: JSON.stringify({
-      message: results
-    }),
+    // body: JSON.stringify(results, null, 2),
+    body: '',
     headers: {
       'X-Custom-Header': 'ASDF'
     }
@@ -89,10 +137,43 @@ async function getReportRowForDealerRoLevel(dealerDbConnInfo: SelectDealerDBInfo
   let results: any[] = [];
 
   try {
-    results.push(await dbConnection.query(getOpportunitiesContactedQuery(dealerDbConnInfo.internal_code, startDate, endDate)));
-    results.push(await dbConnection.query(getOpportunitiesTextedCalledQuery(dealerDbConnInfo.internal_code, startDate, endDate)));
-    results.push(await dbConnection.query(getAppointmentsQuery(dealerDbConnInfo.internal_code, startDate, endDate)));
-    results.push(await dbConnection.query(getRepairOrderRevenueQuery(dealerDbConnInfo.internal_code, startDate, endDate)));
+    const opportunities = dbConnection.query(getOpportunitiesContactedQuery(dealerDbConnInfo.internal_code, startDate, endDate));
+    const opportunitiesContacted = dbConnection.query(getOpportunitiesTextedCalledQuery(dealerDbConnInfo.internal_code, startDate, endDate));
+    const opportunityAppointments = dbConnection.query(getAppointmentsQuery(dealerDbConnInfo.internal_code, startDate, endDate));
+    const opportunityROInfo = dbConnection.query(getRepairOrderRevenueQuery(dealerDbConnInfo.internal_code, startDate, endDate));
+    results = await Promise.all([opportunities, opportunitiesContacted, opportunityAppointments, opportunityROInfo])
+      .then((queryResults) => {
+        const consolidatedResults: any[] = [];
+
+        queryResults.forEach((queryResult: any) => {
+          console.log('result', queryResult);
+          queryResult.forEach((result: any) => {
+            // Find index in consolidatedResults by autoCampaignName
+            const index = consolidatedResults.findIndex((item: any) => item.autoCampaignName === result.autoCampaignName);
+            // If not found, create new object
+            if (index === -1) {
+              consolidatedResults.push({
+                dealershipName: dealerDbConnInfo.dealerName,
+                ...result,
+              });
+            } else {
+              // If found, update existing object
+              consolidatedResults[index] = {
+                dealershipName: dealerDbConnInfo.dealerName,
+                ...consolidatedResults[index],
+                ...result,
+              };
+            }
+          });
+        });
+
+        console.log('consolidatedResults', consolidatedResults);
+
+        return consolidatedResults;
+      });
+    
+    // console.log(results[3]);
+    // console.log(items);
   } catch (error) {
     console.log(error);
   } finally {
@@ -106,16 +187,21 @@ async function getReportRowForDealerRoLevel(dealerDbConnInfo: SelectDealerDBInfo
 /**
 * Local testing
 */
-const startDate = new Date();
-startDate.setFullYear(startDate.getFullYear() - 2);
-const endDate = new Date();
+const startDate = new Date('2021-12-01');
+const endDate = new Date('2021-12-31');
+// const startDate = new Date();
+// startDate.setFullYear(startDate.getFullYear() - 2);
+// const endDate = new Date();
 
 const event = {
-  dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f'],
+  // dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f'],
+  dealershipIds: ['c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
+  // dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f', 'c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
   startDate: startDate,
   endDate: endDate,
 };
 
 toyotaRecallReports(event, {}, (error: any, response: any) => {
+  return console.log('fin');
   return response ? console.log('Response:', response) : console.log('Error:', error);
 });
