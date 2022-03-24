@@ -13,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "csv-writer": "^1.6.0",
     "dotenv": "^16.0.0",
     "mysql": "^2.18.1",
     "promise-mysql": "^5.1.0"
