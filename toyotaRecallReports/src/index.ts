@@ -1,5 +1,6 @@
-// Require promise-mysql
 import mysql from 'promise-mysql';
+
+// Import query functions
 import {
   getOpportunitiesTextedCalledQuery,
   getAppointmentsQuery,
@@ -7,8 +8,11 @@ import {
   getOpportunitiesContactedQuery,
   getDealershipsDBInfo,
 } from './queries/temp';
+
+// Import interfaces
 import { SelectDealerDBInfoResult } from './interfaces/SelectedDealerDBInfoResult';
 
+// Configure environment variables if not in production
 if (process.env['NODE_ENV'] !== 'production') {
   require('dotenv').config();
 }
