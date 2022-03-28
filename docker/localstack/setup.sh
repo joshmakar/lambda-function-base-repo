@@ -39,7 +39,7 @@ $AWS_LOCAL lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
     $AWS_LOCAL lambda create-function \
       --region ${REGION} \
       --function-name ${FUNCTION_NAME} \
-      --runtime nodejs8.10 \
+      --runtime nodejs14.x \
       --handler index.${FUNCTION_NAME} \
       --memory-size 128 \
       --zip-file fileb://${FUNCTION_NAME}.zip \
