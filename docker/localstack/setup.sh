@@ -53,6 +53,25 @@ $AWS_LOCAL lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
 # Remove zip file after lambda function is created/updated
 rm -f ${FUNCTION_NAME}.zip
 
+
+
+
+
+
+
+
+createBucket() {
+  $AWS_LOCAL s3 mb s3://"$1"
+}
+
+createBucket test-bucket-123
+
+
+
+
+
+
+
 # Add environment variables to the lambda function
 echo "Adding environment variables to the lambda function"
 

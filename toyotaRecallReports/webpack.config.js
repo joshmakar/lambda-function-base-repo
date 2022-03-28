@@ -13,7 +13,8 @@ module.exports = {
                 ],
                 exclude: /node_modules/,
             }
-        ]
+        ],
+        exprContextCritical: false, // Suppress warnings
     },
     resolve: {
         extensions: ['.ts', '.js'],

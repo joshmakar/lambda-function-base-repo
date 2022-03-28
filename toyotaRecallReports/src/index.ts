@@ -1,4 +1,7 @@
+// Import dependencies
 import mysql from 'promise-mysql';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { createObjectCsvStringifier } from 'csv-writer';
 
 // Import query functions
 import {
@@ -17,6 +20,9 @@ if (process.env['NODE_ENV'] !== 'production') {
   require('dotenv').config();
 }
 
+/**
+ * The main function that runs the entire process.
+ */
 const toyotaRecallReports = async (event: any, context: any, callback: any) => {
   // Check that the event contains one or more dealershipIds
   if (!event.dealershipIds || !event.dealershipIds.length) {
@@ -38,7 +44,10 @@ const toyotaRecallReports = async (event: any, context: any, callback: any) => {
     }
   });
 
-  // Connection for the Unotifi Index db to get the dealer db credentials
+  // Escape the dealershipIds
+  const safeDealershipIds = event.dealershipIds.map((id: any) => mysql.escape(id));
+
+  // Connection for the Unotifi Index db to get the dealership db credentials
   const indexDbConn = await mysql.createConnection({
     host: process.env['UNOTIFI_COM_INDEX_DB_HOST'],
     user: process.env['UNOTIFI_COM_INDEX_DB_USER'],
@@ -47,11 +56,10 @@ const toyotaRecallReports = async (event: any, context: any, callback: any) => {
     timeout: 60000,
   });
 
-  const safeDealerIds = event.dealershipIds.map((id: any) => mysql.escape(id));
-
-  const dealershipsConnections: SelectDealerDBInfoResult[] = await indexDbConn.query(getDealershipsDBInfo(safeDealerIds));
-
-  indexDbConn.end();
+  const dealershipsConnections: SelectDealerDBInfoResult[] = await indexDbConn.query(getDealershipsDBInfo(safeDealershipIds))
+    .finally(() => {
+      indexDbConn.end();
+    });
 
   // Convert string date to Date object
   const startDate = new Date(event.startDate);
@@ -63,10 +71,11 @@ const toyotaRecallReports = async (event: any, context: any, callback: any) => {
       return getReportRowForDealerRoLevel(connection, startDate, endDate);
     })
   );
-  const resultsSuccess: any[] = [];
+
+  const resultsFormatted: any[] = [];
+
   results[0]!.forEach((result: any) => {
-    // console.log('result', result);
-    const resultSuccess: any = {
+    const resultFormatted: any = {
       dealershipName: result.dealershipName,
       autoCampaignName: result.autoCampaignName,
       totalOpportunities: result.totalOpportunities ?? 0,
@@ -83,14 +92,12 @@ const toyotaRecallReports = async (event: any, context: any, callback: any) => {
       // averageROValue: '',
       // showRate: '',
     };
-    resultsSuccess.push(resultSuccess);
+    resultsFormatted.push(resultFormatted);
   });
 
-  const createCsvWriter = require('csv-writer').createObjectCsvWriter;
   const fileInfo = 'toyotaRecallReports';
 
-  const csvWriterSuccessResults = createCsvWriter({
-    path: `${fileInfo}-results_success-makar.csv`,
+  const csvWriterSuccessResults = createObjectCsvStringifier({
     header: [
       { id: 'dealershipName', title: 'Dealership Name' },
       { id: 'autoCampaignName', title: 'Campaign Name' },
@@ -110,15 +117,31 @@ const toyotaRecallReports = async (event: any, context: any, callback: any) => {
     ]
   });
 
-  csvWriterSuccessResults.writeRecords(resultsSuccess)
-    .then(() => {
-        console.log('Saved results_success.csv');
-    });
+  // This works when running via nodejs
+  // const s3 = new S3Client({
+  //   region: 'us-east-1', // The value here doesn't matter.
+  //   endpoint: 'http://localhost:4566', // This is the localstack EDGE_PORT
+  //   forcePathStyle: true
+  // });
+
+  // This works when running via lambda
+  const s3 = new S3Client({
+    region: 'us-east-1', // The value here doesn't matter.
+    endpoint: 'http://172.17.0.2:4566', // This is the localstack EDGE_PORT
+    forcePathStyle: true
+  });
+
+  await s3.send(new PutObjectCommand({
+    Bucket: 'test-bucket-123',
+    Key: `${fileInfo}-results_success-makar.csv`,
+    Body: csvWriterSuccessResults.getHeaderString() + csvWriterSuccessResults.stringifyRecords(resultsFormatted),
+    ContentType: 'text/csv',
+  }));
 
   callback(null, {
     statusCode: 201,
     // body: JSON.stringify(results, null, 2),
-    body: '',
+    body: resultsFormatted,
     headers: {
       'X-Custom-Header': 'ASDF'
     }
