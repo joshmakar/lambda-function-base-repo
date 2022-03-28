@@ -1,4 +1,4 @@
-export interface SelectDealerDBInfoResult {
+export interface DealershipDBInfo {
   iddealer: string;
   internal_code: string;
   dealerName: string;
