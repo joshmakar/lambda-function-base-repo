@@ -191,8 +191,8 @@ export const getRepairOrderRevenueQuery = (dealerIntegralinkCode: string|number,
 
   return `SELECT DISTINCT
         auto_campaign.name AS autoCampaignName,
-        COUNT(auto_repair_order.id) AS roNo,
-        SUM(REPLACE(repair_order_amount_total, ',', '')) AS roAmount
+        COUNT(auto_repair_order.id) AS totalRepairOrders,
+        SUM(REPLACE(repair_order_amount_total, ',', '')) AS revenue
     FROM
         auto_dealer
             INNER JOIN

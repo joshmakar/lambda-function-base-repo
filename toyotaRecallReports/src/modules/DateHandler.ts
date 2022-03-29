@@ -1,7 +1,7 @@
 /**
  * Generate the datetime to UTC Y-m-d H:i:s format
- * @param {Date} date The date to be converted
- * @returns {string} UTC in the format of Y-m-d H:i:s
+ * @param date The date to be converted
+ * @returns UTC in the format of Y-m-d H:i:s
  */
 export function toUTCDateTimeString(date: Date): string {
   const p = new Intl.DateTimeFormat('en', {
@@ -22,8 +22,8 @@ export function toUTCDateTimeString(date: Date): string {
 
 /**
  * Render a datetime to UTC YYYY-MM-DD_HHMMSS format
- * @param {Date} date The date to be converted
- * @returns {string} UTC in the format of Y-m-d_His
+ * @param date The date to be converted
+ * @returns UTC in the format of Y-m-d_His
  */
 export function renderFilenameTimestamp(date: Date = new Date): string {
   const p = new Intl.DateTimeFormat('en', {

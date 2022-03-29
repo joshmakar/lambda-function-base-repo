@@ -12,11 +12,12 @@ import {
   getDealershipsDBInfo,
 } from './queries/temp';
 
-// Import Modules
-import { renderS3Key } from './modules/AwsS3Helpers';
+// Import modules
+import { generateS3Key } from './modules/AwsS3Helpers';
 
 // Import interfaces
 import { FormattedResult } from './interfaces/FormattedResult';
+import { ReturnedResult } from './interfaces/ReturnedResult';
 import { Event } from './interfaces/Event';
 import { DealershipDBInfo } from './interfaces/DealershipDBInfo';
 
@@ -30,7 +31,7 @@ if (process.env['NODE_ENV'] !== 'production') {
  */
 const toyotaRecallReports = async (event: Event, _context: any, callback: any) => {
   // Check that the event contains one or more dealershipIds
-  if (!event.dealershipIds || !event.dealershipIds.length) {
+  if (!event.dealershipIds?.length) {
     callback('Please provide at least one dealershipId');
     return;
   }
@@ -81,20 +82,20 @@ const toyotaRecallReports = async (event: Event, _context: any, callback: any) =
   const resultsFormatted: FormattedResult[] = [];
 
   // Format the results
-  dealershipsResults.forEach(results => {
-    results.forEach((result) => {
+  dealershipsResults.forEach((results: ReturnedResult[]) => {
+    results.forEach((result: ReturnedResult) => {
       resultsFormatted.push({
-        dealershipName: result.dealershipName,
         autoCampaignName: result.autoCampaignName,
-        totalOpportunities: result.totalOpportunities ?? 0,
-        totalOpportunitiesContacted: result.totalOpportunitiesContacted ?? 0,
-        totalOpportunitiesTexted: result.totalOpportunitiesTexted ?? 0,
-        totalOpportunitiesCalled: result.totalOpportunitiesCalled ?? 0,
+        dealershipName: result.dealershipName,
+        revenue: result.revenue ?? 0,
+        soldVehicles: result.soldVehicles ?? 0,
         totalAppointments: result.totalAppointments ?? 0,
         totalAppointmentsArrived: result.totalAppointmentsArrived ?? 0,
-        soldVehicles: result.soldVehicles ?? 0,
-        totalRepairOrders: result.roNo ?? 0,
-        revenue: result.roAmount ?? 0,
+        totalOpportunities: result.totalOpportunities ?? 0,
+        totalOpportunitiesCalled: result.totalOpportunitiesCalled ?? 0,
+        totalOpportunitiesContacted: result.totalOpportunitiesContacted ?? 0,
+        totalOpportunitiesTexted: result.totalOpportunitiesTexted ?? 0,
+        totalRepairOrders: result.totalRepairOrders ?? 0,
       });
     });
   });
@@ -117,21 +118,21 @@ const toyotaRecallReports = async (event: Event, _context: any, callback: any) =
 
   const csvData = csvWriterResults.getHeaderString() + csvWriterResults.stringifyRecords(resultsFormatted);
 
-  const s3Key = renderS3Key('toyota-recall-reports', 'csv');
+  const s3Key = generateS3Key('toyota-recall-reports', 'csv');
 
   // This works when running via nodejs
-  // const s3 = new S3Client({
-  //   region: 'us-east-1', // The value here doesn't matter.
-  //   endpoint: 'http://localhost:4566', // This is the localstack EDGE_PORT
-  //   forcePathStyle: true
-  // });
-
-  // This works when running via lambda
   const s3 = new S3Client({
     region: 'us-east-1', // The value here doesn't matter.
-    endpoint: 'http://172.17.0.2:4566', // This is the localstack EDGE_PORT
+    endpoint: 'http://localhost:4566', // This is the localstack EDGE_PORT
     forcePathStyle: true
   });
+
+  // This works when running via lambda
+  // const s3 = new S3Client({
+  //   region: 'us-east-1', // The value here doesn't matter.
+  //   endpoint: 'http://172.17.0.2:4566', // This is the localstack EDGE_PORT
+  //   forcePathStyle: true
+  // });
 
   // Save the csv data to S3
   await s3.send(new PutObjectCommand({
@@ -154,42 +155,51 @@ module.exports = {
   toyotaRecallReports,
 };
 
-async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date, endDate: Date) {
+/**
+ * Get the report data for a dealership
+ * @param dealershipDBInfo The dealership db info
+ * @param startDate The start date
+ * @param endDate The end date
+ * @returns The report data
+ */
+async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date, endDate: Date): Promise<ReturnedResult[]> {
   const dbConnection = await mysql.createConnection({
-    host: dealershipDBInfo.IP || '',
-    user: dealershipDBInfo.user || '',
-    password: dealershipDBInfo.password || '',
-    database: dealershipDBInfo.name || '',
+    host: dealershipDBInfo.IP,
+    user: dealershipDBInfo.user,
+    password: dealershipDBInfo.password,
+    database: dealershipDBInfo.name,
     timeout: 60000,
   });
 
-  let results: any[] = [];
+  let results: ReturnedResult[] = [];
 
   try {
     const opportunities = dbConnection.query(getOpportunitiesContactedQuery(dealershipDBInfo.internal_code, startDate, endDate));
     const opportunitiesContacted = dbConnection.query(getOpportunitiesTextedCalledQuery(dealershipDBInfo.internal_code, startDate, endDate));
     const opportunityAppointments = dbConnection.query(getAppointmentsQuery(dealershipDBInfo.internal_code, startDate, endDate));
     const opportunityROInfo = dbConnection.query(getRepairOrderRevenueQuery(dealershipDBInfo.internal_code, startDate, endDate));
+
     results = await Promise.all([opportunities, opportunitiesContacted, opportunityAppointments, opportunityROInfo])
       .then((queryResults) => {
-        const consolidatedResults: any[] = [];
+        const consolidatedResults: ReturnedResult[] = [];
 
-        queryResults.forEach((queryResult: any) => {
-          queryResult.forEach((result: any) => {
+        queryResults.forEach((queryResult: ReturnedResult[]) => {
+          queryResult.forEach((result: ReturnedResult) => {
             // Find index in consolidatedResults by autoCampaignName
-            const index = consolidatedResults.findIndex((item: any) => item.autoCampaignName === result.autoCampaignName);
+            const index = consolidatedResults.findIndex((item: ReturnedResult) => item.autoCampaignName === result.autoCampaignName);
+
             // If not found, create new object
             if (index === -1) {
               consolidatedResults.push({
-                dealershipName: dealershipDBInfo.dealerName,
                 ...result,
+                dealershipName: dealershipDBInfo.dealerName,
               });
             } else {
               // If found, update existing object
               consolidatedResults[index] = {
-                dealershipName: dealershipDBInfo.dealerName,
                 ...consolidatedResults[index],
                 ...result,
+                dealershipName: dealershipDBInfo.dealerName,
               };
             }
           });
@@ -197,9 +207,6 @@ async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date
 
         return consolidatedResults;
       });
-    
-    // console.log(results[3]);
-    // console.log(items);
   } catch (error) {
     console.log(error);
   } finally {
