@@ -8,7 +8,8 @@
     "development": "webpack --mode development",
     "prod": "npm run production",
     "production": "webpack --mode production",
-    "watch": "npm run development -- --watch"
+    "watch": "npm run development -- --watch",
+    "prod-watch": "npm run production -- --watch"
   },
   "author": "",
   "license": "ISC",
@@ -16,6 +17,7 @@
     "@aws-sdk/client-s3": "^3.56.0",
     "@aws-sdk/signature-v4-crt": "^3.56.0",
     "aws-sdk": "^2.1101.0",
+    "axios": "^0.26.1",
     "csv-writer": "^1.6.0",
     "dotenv": "^16.0.0",
     "mysql": "^2.18.1",

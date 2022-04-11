@@ -9,7 +9,6 @@ import {
   getAppointmentsQuery,
   getRepairOrderRevenueQuery,
   getOpportunitiesContactedQuery,
-  getDealershipsDBInfo,
 } from './queries/temp';
 
 // Import modules
@@ -19,7 +18,10 @@ import { generateS3Key } from './modules/AwsS3Helpers';
 import { FormattedResult } from './interfaces/FormattedResult';
 import { ReturnedResult } from './interfaces/ReturnedResult';
 import { Event } from './interfaces/Event';
-import { DealershipDBInfo } from './interfaces/DealershipDBInfo';
+import { DealershipDBInfo } from './classes/UnotifiApi/interfaces/DealershipDBInfo';
+
+// Import classes
+import { UnotifiApiClient } from './classes/UnotifiApi/UnotifiApiClient';
 
 // Configure environment variables if not in production
 if (process.env['NODE_ENV'] !== 'production') {
@@ -29,7 +31,15 @@ if (process.env['NODE_ENV'] !== 'production') {
 /**
  * The main function that runs the entire process.
  */
-const toyotaRecallReports = async (event: Event, _context: any, callback: any) => {
+const handler = async (event: Event, _context: any, callback: any) => {
+  // Check required DB connection environment variables
+  ['UNOTIFI_API_TOKEN'].forEach(envVar => {
+    if (!process.env[envVar]) {
+      callback(`Please set ${envVar} in your environment`);
+      return;
+    }
+  });
+
   // Check that the event contains one or more dealershipIds
   if (!event.dealershipIds?.length) {
     callback('Please provide at least one dealershipId');
@@ -42,31 +52,9 @@ const toyotaRecallReports = async (event: Event, _context: any, callback: any) =
     return;
   }
 
-  // Check required DB connection environment variables
-  ['UNOTIFI_COM_INDEX_DB_HOST', 'UNOTIFI_COM_INDEX_DB_USER', 'UNOTIFI_COM_INDEX_DB_PASS'].forEach(envVar => {
-    if (!process.env[envVar]) {
-      callback(`Please set ${envVar} in your environment`);
-      return;
-    }
-  });
-
-  // Escape the dealershipIds
-  const safeDealershipIds: string[] = event.dealershipIds.map((id: string|number) => mysql.escape(id));
-
-  // Connection for the Unotifi Index db to get the dealerships db info
-  const indexDbConn: mysql.Connection = await mysql.createConnection({
-    host: process.env['UNOTIFI_COM_INDEX_DB_HOST'],
-    user: process.env['UNOTIFI_COM_INDEX_DB_USER'],
-    password: process.env['UNOTIFI_COM_INDEX_DB_PASS'],
-    database: 'unotifi_com_index',
-    timeout: 60000,
-  });
-
-  // Get the dealerships db info
-  const dealershipsConnections: DealershipDBInfo[] = await indexDbConn.query(getDealershipsDBInfo(safeDealershipIds))
-    .finally(() => {
-      indexDbConn.end();
-    });
+  // Get dealerships db info
+  const unotifiApiClient = new UnotifiApiClient(process.env['UNOTIFI_API_TOKEN']!);
+  const dealershipsConnections: DealershipDBInfo[] = await unotifiApiClient.getDealershipsDBInfo(event.dealershipIds);
 
   // Convert string date to Date object
   const startDate: Date = new Date(event.startDate);
@@ -121,18 +109,18 @@ const toyotaRecallReports = async (event: Event, _context: any, callback: any) =
   const s3Key = generateS3Key('toyota-recall-reports', 'csv');
 
   // This works when running via nodejs
-  const s3 = new S3Client({
-    region: 'us-east-1', // The value here doesn't matter.
-    endpoint: 'http://localhost:4566', // This is the localstack EDGE_PORT
-    forcePathStyle: true
-  });
-
-  // This works when running via lambda
   // const s3 = new S3Client({
   //   region: 'us-east-1', // The value here doesn't matter.
-  //   endpoint: 'http://172.17.0.2:4566', // This is the localstack EDGE_PORT
+  //   endpoint: 'http://localhost:4566', // This is the localstack EDGE_PORT
   //   forcePathStyle: true
   // });
+
+  // This works when running via lambda
+  const s3 = new S3Client({
+    region: 'us-east-1', // The value here doesn't matter.
+    endpoint: 'http://172.17.0.2:4566', // This is the localstack EDGE_PORT
+    forcePathStyle: true
+  });
 
   // Save the csv data to S3
   await s3.send(new PutObjectCommand({
@@ -152,7 +140,7 @@ const toyotaRecallReports = async (event: Event, _context: any, callback: any) =
 }
 
 module.exports = {
-  toyotaRecallReports,
+  handler,
 };
 
 /**
@@ -164,20 +152,20 @@ module.exports = {
  */
 async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date, endDate: Date): Promise<ReturnedResult[]> {
   const dbConnection = await mysql.createConnection({
-    host: dealershipDBInfo.IP,
-    user: dealershipDBInfo.user,
-    password: dealershipDBInfo.password,
-    database: dealershipDBInfo.name,
+    host: dealershipDBInfo.connection.host,
+    database: dealershipDBInfo.connection.database,
+    user: dealershipDBInfo.connection.user,
+    password: dealershipDBInfo.connection.password,
     timeout: 60000,
   });
 
   let results: ReturnedResult[] = [];
 
   try {
-    const opportunities = dbConnection.query(getOpportunitiesContactedQuery(dealershipDBInfo.internal_code, startDate, endDate));
-    const opportunitiesContacted = dbConnection.query(getOpportunitiesTextedCalledQuery(dealershipDBInfo.internal_code, startDate, endDate));
-    const opportunityAppointments = dbConnection.query(getAppointmentsQuery(dealershipDBInfo.internal_code, startDate, endDate));
-    const opportunityROInfo = dbConnection.query(getRepairOrderRevenueQuery(dealershipDBInfo.internal_code, startDate, endDate));
+    const opportunities = dbConnection.query(getOpportunitiesContactedQuery(dealershipDBInfo.internalCode, startDate, endDate));
+    const opportunitiesContacted = dbConnection.query(getOpportunitiesTextedCalledQuery(dealershipDBInfo.internalCode, startDate, endDate));
+    const opportunityAppointments = dbConnection.query(getAppointmentsQuery(dealershipDBInfo.internalCode, startDate, endDate));
+    const opportunityROInfo = dbConnection.query(getRepairOrderRevenueQuery(dealershipDBInfo.internalCode, startDate, endDate));
 
     results = await Promise.all([opportunities, opportunitiesContacted, opportunityAppointments, opportunityROInfo])
       .then((queryResults) => {
@@ -217,26 +205,27 @@ async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date
   return results;
 }
 
-/**
-* Local testing
-*/
-const startDate = new Date('2021-12-01');
-const endDate = new Date('2021-12-31');
+// /**
+// * Local testing
+// */
+// // const startDate = new Date('2021-12-01');
+// // const endDate = new Date('2021-12-31');
 // const startDate = new Date();
 // startDate.setFullYear(startDate.getFullYear() - 2);
 // const endDate = new Date();
-// const startDate = new Date();
-// startDate.setDate(startDate.getDate() - 90);
-// const endDate = new Date();
+// // const startDate = new Date();
+// // startDate.setDate(startDate.getDate() - 90);
+// // const endDate = new Date();
 
-const event: Event = {
-  // dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f'],
-  // dealershipIds: ['c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
-  dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f', 'c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
-  startDate: startDate,
-  endDate: endDate,
-};
+// const event: Event = {
+//   // dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f'],
+//   // dealershipIds: ['c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
+//   dealershipIds: ['99999'],
+//   // dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f', 'c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
+//   startDate: startDate,
+//   endDate: endDate,
+// };
 
-toyotaRecallReports(event, {}, (error: any, response: any) => {
-  return response ? console.log('Response:', response) : console.log('Error:', error);
-});
+// handler(event, {}, (error: any, response: any) => {
+//   return response ? console.log('Response:', response) : console.log('Error:', error);
+// });

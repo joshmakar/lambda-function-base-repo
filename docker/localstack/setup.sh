@@ -40,8 +40,9 @@ $AWS_LOCAL lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
       --region ${REGION} \
       --function-name ${FUNCTION_NAME} \
       --runtime nodejs14.x \
-      --handler index.${FUNCTION_NAME} \
+      --handler index.handler \
       --memory-size 128 \
+      --timeout 60 \
       --zip-file fileb://${FUNCTION_NAME}.zip \
       --role arn:aws:iam::123456:role/irrelevant
 
@@ -77,7 +78,5 @@ echo "Adding environment variables to the lambda function"
 
 $AWS_LOCAL lambda update-function-configuration --function-name ${FUNCTION_NAME} \
   --environment '{"Variables": {
-    "UNOTIFI_COM_INDEX_DB_HOST": "'${UNOTIFI_COM_INDEX_DB_HOST}'",
-    "UNOTIFI_COM_INDEX_DB_USER": "'${UNOTIFI_COM_INDEX_DB_USER}'",
-    "UNOTIFI_COM_INDEX_DB_PASS": "'${UNOTIFI_COM_INDEX_DB_PASS}'"
+    "UNOTIFI_API_TOKEN": "'${UNOTIFI_API_TOKEN}'"
   }}'
