@@ -63,9 +63,12 @@ const handler = async (event: Event, _context: any, callback: any) => {
   // Get report data for each dealership
   const dealershipsResults = await Promise.all(
     dealershipsConnections.map((connection) => {
+      console.log(JSON.stringify(connection));
       return getReportData(connection, startDate, endDate);
     })
   );
+
+  console.log('Finished getting report data.');
 
   const resultsFormatted: FormattedResult[] = [];
 
@@ -116,19 +119,23 @@ const handler = async (event: Event, _context: any, callback: any) => {
   // });
 
   // This works when running via lambda
+  console.log('Connecting to S3...');
   const s3 = new S3Client({
     region: 'us-east-1', // The value here doesn't matter.
-    endpoint: 'http://172.17.0.2:4566', // This is the localstack EDGE_PORT
+    // endpoint: 'http://172.17.0.2:4566', // This is the localstack EDGE_PORT
     forcePathStyle: true
   });
+  console.log('Connected to S3.');
 
   // Save the csv data to S3
+  console.log('Saving CSV data to S3...');
   await s3.send(new PutObjectCommand({
-    Bucket: 'test-bucket-123',
+    Bucket: 'https-test-function-816035596711',
     Key: s3Key,
     Body: csvData,
     ContentType: 'text/csv',
   }));
+  console.log('Saved CSV data to S3.');
 
   callback(null, {
     statusCode: 201,
@@ -151,6 +158,7 @@ module.exports = {
  * @returns The report data
  */
 async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date, endDate: Date): Promise<ReturnedResult[]> {
+  console.log(`Getting report data for ${dealershipDBInfo.internalCode}`);
   const dbConnection = await mysql.createConnection({
     host: dealershipDBInfo.connection.host,
     database: dealershipDBInfo.connection.database,
@@ -158,11 +166,14 @@ async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date
     password: dealershipDBInfo.connection.password,
     timeout: 60000,
   });
+  console.log(`Connected to ${dealershipDBInfo.internalCode}`);
 
   let results: ReturnedResult[] = [];
 
   try {
+    console.log(`Getting opportunities data for ${dealershipDBInfo.internalCode}`);
     const opportunities = dbConnection.query(getOpportunitiesContactedQuery(dealershipDBInfo.internalCode, startDate, endDate));
+    console.log('Opportunities: ' + JSON.stringify(opportunities));
     const opportunitiesContacted = dbConnection.query(getOpportunitiesTextedCalledQuery(dealershipDBInfo.internalCode, startDate, endDate));
     const opportunityAppointments = dbConnection.query(getAppointmentsQuery(dealershipDBInfo.internalCode, startDate, endDate));
     const opportunityROInfo = dbConnection.query(getRepairOrderRevenueQuery(dealershipDBInfo.internalCode, startDate, endDate));
