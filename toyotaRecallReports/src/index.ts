@@ -31,7 +31,8 @@ if (process.env['NODE_ENV'] !== 'production') {
 /**
  * The main function that runs the entire process.
  */
-const handler = async (event: Event, _context: any, callback: any) => {
+const handler = async (event: any, _context: any, callback: any) => {
+  console.log('Received event:', JSON.stringify(event, null, 2));
   // Check required DB connection environment variables
   ['UNOTIFI_API_TOKEN'].forEach(envVar => {
     if (!process.env[envVar]) {
@@ -40,9 +41,11 @@ const handler = async (event: Event, _context: any, callback: any) => {
     }
   });
 
-  // Check that the event contains one or more dealershipIds
-  if (!event.dealershipIds?.length) {
-    callback('Please provide at least one dealershipId');
+  event = JSON.parse(event.body);
+
+  // Check that the event contains one or more dealershipIntegralinkCodes
+  if (!event.dealershipIntegralinkCodes?.length) {
+    callback('Please provide at least one dealershipIntegralinkCode');
     return;
   }
 
@@ -54,7 +57,7 @@ const handler = async (event: Event, _context: any, callback: any) => {
 
   // Get dealerships db info
   const unotifiApiClient = new UnotifiApiClient(process.env['UNOTIFI_API_TOKEN']!);
-  const dealershipsConnections: DealershipDBInfo[] = await unotifiApiClient.getDealershipsDBInfo(event.dealershipIds);
+  const dealershipsConnections: DealershipDBInfo[] = await unotifiApiClient.getDealershipsDBInfo(event.dealershipIntegralinkCodes);
 
   // Convert string date to Date object
   const startDate: Date = new Date(event.startDate);
@@ -109,7 +112,8 @@ const handler = async (event: Event, _context: any, callback: any) => {
 
   const csvData = csvWriterResults.getHeaderString() + csvWriterResults.stringifyRecords(resultsFormatted);
 
-  const s3Key = generateS3Key('toyota-recall-reports', 'csv');
+  const s3Key = generateS3Key('toyota-recall-reports', 'csv', { prependToPath: 'Toyota_Recall_Reports' });
+  console.log(`S3 Key: ${s3Key}`);
 
   // This works when running via nodejs
   // const s3 = new S3Client({
@@ -130,7 +134,7 @@ const handler = async (event: Event, _context: any, callback: any) => {
   // Save the csv data to S3
   console.log('Saving CSV data to S3...');
   await s3.send(new PutObjectCommand({
-    Bucket: 'https-test-function-816035596711',
+    Bucket: 'unotifi-reports',
     Key: s3Key,
     Body: csvData,
     ContentType: 'text/csv',
@@ -229,10 +233,10 @@ async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date
 // // const endDate = new Date();
 
 // const event: Event = {
-//   // dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f'],
-//   // dealershipIds: ['c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
-//   dealershipIds: ['99999'],
-//   // dealershipIds: ['e108cd88-bea5-f4af-11ac-574465d1fd2f', 'c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
+//   // dealershipIntegralinkCodes: ['e108cd88-bea5-f4af-11ac-574465d1fd2f'],
+//   // dealershipIntegralinkCodes: ['c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
+//   dealershipIntegralinkCodes: ['99999'],
+//   // dealershipIntegralinkCodes: ['e108cd88-bea5-f4af-11ac-574465d1fd2f', 'c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
 //   startDate: startDate,
 //   endDate: endDate,
 // };

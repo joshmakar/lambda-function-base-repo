@@ -12,7 +12,7 @@ AWS_LOCAL="aws --endpoint-url=http://localhost:4566"
 $AWS_LOCAL lambda invoke \
   --function-name ${FUNCTION_NAME} \
   --payload '{
-    "dealershipIds": ["99999"],
+    "dealershipIntegralinkCodes": ["99999"],
     "startDate": "2020-03-23",
     "endDate": "2022-03-23"
   }' \

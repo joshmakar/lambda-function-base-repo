@@ -1,5 +1,5 @@
 export interface Event {
-  dealershipIds: string[];
+  dealershipIntegralinkCodes: string[];
   startDate: Date | string;
   endDate: Date | string;
 }
