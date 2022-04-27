@@ -1,0 +1,16 @@
+{
+  "name": "recall-roi-report",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "npm run development",
+    "development": "webpack --mode development",
+    "prod": "npm run production",
+    "production": "webpack --mode production",
+    "watch": "npm run development -- --watch",
+    "prod-watch": "npm run production -- --watch"
+  },
+  "author": "",
+  "license": "ISC"
+}

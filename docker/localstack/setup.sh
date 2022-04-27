@@ -2,7 +2,7 @@
 
 REGION=us-east-1
 STAGE=test
-FUNCTION_NAME=toyotaRecallReports
+FUNCTION_NAME=recallBdcReport
 
 # Source the ".env" file so the environment variables are available
 if [ -f .env ]; then
