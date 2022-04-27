@@ -55,22 +55,12 @@ $AWS_LOCAL lambda get-function --function-name ${FUNCTION_NAME} > /dev/null 2>&1
 rm -f ${FUNCTION_NAME}.zip
 
 
-
-
-
-
-
-
+# Create S3 bucket
 createBucket() {
   $AWS_LOCAL s3 mb s3://"$1"
 }
 
-createBucket test-bucket-123
-
-
-
-
-
+createBucket ${UNOTIFI_REPORTS_BUCKET}
 
 
 # Add environment variables to the lambda function

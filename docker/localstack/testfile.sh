@@ -14,6 +14,7 @@ $AWS_LOCAL lambda invoke \
   --payload '{
     "dealershipIntegralinkCodes": ["99999"],
     "startDate": "2020-03-23",
-    "endDate": "2022-03-23"
+    "endDate": "2022-03-23",
+    "replyTo": "${REPLY_TO}"
   }' \
   ${FUNCTION_NAME}_test.json
