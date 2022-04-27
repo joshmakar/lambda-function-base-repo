@@ -17,4 +17,4 @@ $AWS_LOCAL lambda invoke \
     "endDate": "2022-03-23",
     "replyTo": "${REPLY_TO}"
   }' \
-  ${FUNCTION_NAME}_test.json
+  ${FUNCTION_NAME}_test-results.json
