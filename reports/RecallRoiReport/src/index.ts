@@ -6,6 +6,7 @@ import axios from 'axios';
 
 // Import query functions
 import {
+  getAppointments,
   getROICampaigns,
 } from './queries/temp';
 
@@ -15,7 +16,6 @@ import { generateS3Key } from './modules/AwsS3Helpers';
 // Import interfaces
 import { FormattedResult } from './interfaces/FormattedResult';
 import { ReturnedResult } from './interfaces/ReturnedResult';
-import { Event } from './interfaces/Event';
 import { DealershipDBInfo } from './classes/UnotifiApi/interfaces/DealershipDBInfo';
 
 // Import classes
@@ -31,7 +31,6 @@ if (process.env['NODE_ENV'] !== 'production') {
  */
 export const handler = async (event: any, _context: any, callback: any) => {
   try {
-    console.log('Received event:', event);
     // Check required DB connection environment variables
     ['UNOTIFI_API_TOKEN', 'UNOTIFI_REPORTS_BUCKET'].forEach(envVar => {
       if (!process.env[envVar]) {
@@ -71,12 +70,9 @@ export const handler = async (event: any, _context: any, callback: any) => {
     // Get report data for each dealership
     const dealershipsResults = await Promise.all(
       dealershipsConnections.map((connection) => {
-        console.log(JSON.stringify(connection));
         return getReportData(connection, startDate, endDate);
       })
     );
-
-    console.log('Finished getting report data.');
 
     const resultsFormatted: FormattedResult[] = [];
 
@@ -84,17 +80,15 @@ export const handler = async (event: any, _context: any, callback: any) => {
     dealershipsResults.forEach((results: ReturnedResult[]) => {
       results.forEach((result: ReturnedResult) => {
         resultsFormatted.push({
-          autoCampaignName: result.autoCampaignName,
-          dealershipName: result.dealershipName,
-          revenue: result.revenue ?? 0,
-          soldVehicles: result.soldVehicles ?? 0,
-          totalAppointments: result.totalAppointments ?? 0,
-          totalAppointmentsArrived: result.totalAppointmentsArrived ?? 0,
-          totalOpportunities: result.totalOpportunities ?? 0,
-          totalOpportunitiesCalled: result.totalOpportunitiesCalled ?? 0,
-          totalOpportunitiesContacted: result.totalOpportunitiesContacted ?? 0,
-          totalOpportunitiesTexted: result.totalOpportunitiesTexted ?? 0,
-          totalRepairOrders: result.totalRepairOrders ?? 0,
+          dealershipName: result.dealershipName, // Store
+          campaignName: result.campaignName ?? '', // Campaign name
+          campaignType: result.campaignType ?? '', // Campaign type
+          textMessageNo: result.textMessageNo ?? 0, // # of text messages
+          emailNo: result.emailNo ?? 0, // # of emails
+          appointmentNo: result.appointmentNo ?? 0, // # of appointments
+          arrivedAppointmentNo: result.arrivedAppointmentNo ?? 0, // # of arrived appointments
+          roNo: result.roNo ?? 0, // # of ROs
+          roTotal: result.roTotal ?? 0,
         });
       });
     });
@@ -102,23 +96,20 @@ export const handler = async (event: any, _context: any, callback: any) => {
     const csvWriterResults = createObjectCsvStringifier({
       header: [
         { id: 'dealershipName', title: 'Dealership Name' },
-        { id: 'autoCampaignName', title: 'Campaign Name' },
-        { id: 'totalOpportunities', title: 'Total Opportunities' },
-        { id: 'totalOpportunitiesContacted', title: 'Total Opportunities Contacted' },
-        { id: 'totalOpportunitiesTexted', title: 'Total Opportunities Texted' },
-        { id: 'totalOpportunitiesCalled', title: 'Total Opportunities Called' },
-        { id: 'totalAppointments', title: 'Total Appointments' },
-        { id: 'totalAppointmentsArrived', title: 'Total Appointments Arrived' },
-        { id: 'totalRepairOrders', title: 'Total Repair Orders' },
-        { id: 'revenue', title: 'Revenue' },
-        { id: 'soldVehicles', title: 'Sold Vehicles' },
+        { id: 'campaignName', title: 'Campaign Name' },
+        { id: 'campaignType', title: 'Campaign Type' },
+        { id: 'textMessageNo', title: 'No. of Texts' },
+        { id: 'emailNo', title: 'No. of Emails' },
+        { id: 'appointmentNo', title: 'No. of Appointments' },
+        { id: 'arrivedAppointmentNo', title: 'No. of Arrived Appointments' },
+        { id: 'roNo', title: 'No. of ROs' },
+        { id: 'roTotal', title: 'Amount' },
       ]
     });
 
     const csvData = csvWriterResults.getHeaderString() + csvWriterResults.stringifyRecords(resultsFormatted);
 
-    const s3Key = generateS3Key('toyota-recall-reports', 'csv', { prependToPath: 'Toyota_Recall_Reports' });
-    console.log(`S3 Key: ${s3Key}`);
+    const s3Key = generateS3Key('recall-roi-report', 'csv', { prependToPath: 'Recall_ROI_Reports' });
 
     // This works when running via nodejs
     // const s3 = new S3Client({
@@ -128,35 +119,26 @@ export const handler = async (event: any, _context: any, callback: any) => {
     // });
 
     // This works when running via lambda
-    console.log('Connecting to S3...');
     const s3 = new S3Client({
       region: 'us-east-1', // The value here doesn't matter.
       // endpoint: 'http://172.17.0.2:4566', // This is the localstack EDGE_PORT
       forcePathStyle: true
     });
-    console.log('Connected to S3.');
 
     // Save the csv data to S3
-    console.log('Saving CSV data to S3...');
     await s3.send(new PutObjectCommand({
       Bucket: process.env['UNOTIFI_REPORTS_BUCKET'],
       Key: s3Key,
       Body: csvData,
       ContentType: 'text/csv',
     }));
-    console.log('Saved CSV data to S3.');
 
-    console.log('Updating report', event.replyTo);
     await axios.put(event.replyTo, {
         status: 'completed',
         csv_s3_bucket: process.env['UNOTIFI_REPORTS_BUCKET'],
         csv_s3_key: s3Key,
       })
-      .then((response) => {
-        console.log('Updated report', response.data);
-      })
       .catch((error) => {
-        console.log('Error updating report', error);
         throw new Error("Error updating report", error);
       });
 
@@ -168,7 +150,6 @@ export const handler = async (event: any, _context: any, callback: any) => {
       }
     });
   } catch (error) {
-    console.log('Error:', error);
     callback(error);
   }
 }
@@ -181,7 +162,6 @@ export const handler = async (event: any, _context: any, callback: any) => {
  * @returns The report data
  */
 async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date, endDate: Date): Promise<ReturnedResult[]> {
-  console.log(`Getting report data for ${dealershipDBInfo.internalCode}`);
   const dbConnection = await mysql.createConnection({
     host: dealershipDBInfo.connection.host,
     database: dealershipDBInfo.connection.database,
@@ -189,25 +169,18 @@ async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date
     password: dealershipDBInfo.connection.password,
     timeout: 60000,
   });
-  console.log(`Connected to ${dealershipDBInfo.internalCode}`);
 
-  let results: ReturnedResult[] = [];
+  const consolidatedResults: ReturnedResult[] = [];
 
   try {
-    console.log(`Getting ROI campaigns for ${dealershipDBInfo.internalCode}`);
     const campaigns = dbConnection.query(getROICampaigns(dealershipDBInfo.internalCode, startDate, endDate));
-    console.log('Campaigns: ' + JSON.stringify(campaigns));
 
-    results = await Promise.all([campaigns])
+    await Promise.all([campaigns])
       .then((queryResults) => {
-        const consolidatedResults: ReturnedResult[] = [];
-        console.log('Query results: ' + JSON.stringify(queryResults));
-
         queryResults.forEach((queryResult: ReturnedResult[]) => {
           queryResult.forEach((result: ReturnedResult) => {
-            console.log('Result: ' + JSON.stringify(result));
-            // Find index in consolidatedResults by autoCampaignName
-            const index = consolidatedResults.findIndex((item: ReturnedResult) => item.autoCampaignName === result.autoCampaignName);
+            // Find index in consolidatedResults by campaignId
+            const index = consolidatedResults.findIndex((item: ReturnedResult) => item.campaignId === result.campaignId);
 
             // If not found, create new object
             if (index === -1) {
@@ -225,15 +198,44 @@ async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date
             }
           });
         });
-
-        return consolidatedResults;
       });
+
+    // Get unique campaign Ids
+    const campaignIds = [...new Set(consolidatedResults.map((result: ReturnedResult) => result.campaignId))];
+
+    if (campaignIds.length) {
+      const appointments = dbConnection.query(getAppointments(campaignIds, startDate, endDate));
+
+      await Promise.all([appointments])
+        .then((queryResults) => {
+          queryResults.forEach((queryResult: ReturnedResult[]) => {
+            queryResult.forEach((result: ReturnedResult) => {
+              // Find index in consolidatedResults by campaignId
+              const index = consolidatedResults.findIndex((item: ReturnedResult) => item.campaignId === result.campaignId);
+
+              // If not found, create new object
+              if (index === -1) {
+                consolidatedResults.push({
+                  ...result,
+                  dealershipName: dealershipDBInfo.dealerName,
+                });
+              } else {
+                // If found, update existing object
+                consolidatedResults[index] = {
+                  ...consolidatedResults[index],
+                  ...result,
+                };
+              }
+            });
+          });
+        });
+    }
   } catch (error) {
-    console.log(error);
+    console.error(error);
   } finally {
     // Close the db connection, even if there's an error. This avoids a hanging process.
     await dbConnection.end();
   }
 
-  return results;
+  return consolidatedResults;
 }

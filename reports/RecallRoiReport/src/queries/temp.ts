@@ -101,7 +101,7 @@ export const getAppointments = (campaignIds: string[], startDate: Date, endDate:
             INNER JOIN auto_appointment ON auto_appointment.opportunity_id_c = opportunities.id
             AND auto_appointment.deleted = 0
         WHERE
-            auto_campaign.id IN ('${campaignIdsString}')
+            auto_campaign.id IN (${campaignIdsString})
             AND opportunities.last_contacted_date IS NOT NULL
             AND (
                 (

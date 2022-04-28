@@ -1,13 +1,12 @@
 export interface ReturnedResult {
-  autoCampaignName: string;
+  appointmentNo: number;
+  arrivedAppointmentNo: number;
+  campaignId: string;
+  campaignName?: string;
+  campaignType?: string;
   dealershipName: string;
-  revenue?: number;
-  soldVehicles?: number;
-  totalAppointments?: number;
-  totalAppointmentsArrived?: number;
-  totalOpportunities?: number;
-  totalOpportunitiesCalled?: number;
-  totalOpportunitiesContacted?: number;
-  totalOpportunitiesTexted?: number;
-  totalRepairOrders?: number;
+  emailNo?: number;
+  roNo?: number;
+  roTotal?: number;
+  textMessageNo?: number;
 }

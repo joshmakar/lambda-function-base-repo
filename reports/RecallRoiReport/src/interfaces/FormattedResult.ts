@@ -1,13 +1,11 @@
 export interface FormattedResult {
-  autoCampaignName: string;
+  appointmentNo: number;
+  arrivedAppointmentNo: number;
   dealershipName: string;
-  revenue: number;
-  soldVehicles: number;
-  totalAppointments: number;
-  totalAppointmentsArrived: number;
-  totalOpportunities: number;
-  totalOpportunitiesCalled: number;
-  totalOpportunitiesContacted: number;
-  totalOpportunitiesTexted: number;
-  totalRepairOrders: number;
+  campaignName: string;
+  campaignType: string;
+  textMessageNo: number;
+  emailNo: number;
+  roNo: number;
+  roTotal: number;
 }
