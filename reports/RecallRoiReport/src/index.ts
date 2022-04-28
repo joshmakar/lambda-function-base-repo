@@ -6,10 +6,7 @@ import axios from 'axios';
 
 // Import query functions
 import {
-  getOpportunitiesTextedCalledQuery,
-  getAppointmentsQuery,
-  getRepairOrderRevenueQuery,
-  getOpportunitiesContactedQuery,
+  getROICampaigns,
 } from './queries/temp';
 
 // Import modules
@@ -34,7 +31,7 @@ if (process.env['NODE_ENV'] !== 'production') {
  */
 const handler = async (event: any, _context: any, callback: any) => {
   try {
-    console.log('Received event:', JSON.stringify(event, null, 2));
+    console.log('Received event:', event);
     // Check required DB connection environment variables
     ['UNOTIFI_API_TOKEN', 'UNOTIFI_REPORTS_BUCKET'].forEach(envVar => {
       if (!process.env[envVar]) {
@@ -201,19 +198,18 @@ async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date
   let results: ReturnedResult[] = [];
 
   try {
-    console.log(`Getting opportunities data for ${dealershipDBInfo.internalCode}`);
-    const opportunities = dbConnection.query(getOpportunitiesContactedQuery(dealershipDBInfo.internalCode, startDate, endDate));
-    console.log('Opportunities: ' + JSON.stringify(opportunities));
-    const opportunitiesContacted = dbConnection.query(getOpportunitiesTextedCalledQuery(dealershipDBInfo.internalCode, startDate, endDate));
-    const opportunityAppointments = dbConnection.query(getAppointmentsQuery(dealershipDBInfo.internalCode, startDate, endDate));
-    const opportunityROInfo = dbConnection.query(getRepairOrderRevenueQuery(dealershipDBInfo.internalCode, startDate, endDate));
+    console.log(`Getting ROI campaigns for ${dealershipDBInfo.internalCode}`);
+    const campaigns = dbConnection.query(getROICampaigns(dealershipDBInfo.internalCode, startDate, endDate));
+    console.log('Campaigns: ' + JSON.stringify(campaigns));
 
-    results = await Promise.all([opportunities, opportunitiesContacted, opportunityAppointments, opportunityROInfo])
+    results = await Promise.all([campaigns])
       .then((queryResults) => {
         const consolidatedResults: ReturnedResult[] = [];
+        console.log('Query results: ' + JSON.stringify(queryResults));
 
         queryResults.forEach((queryResult: ReturnedResult[]) => {
           queryResult.forEach((result: ReturnedResult) => {
+            console.log('Result: ' + JSON.stringify(result));
             // Find index in consolidatedResults by autoCampaignName
             const index = consolidatedResults.findIndex((item: ReturnedResult) => item.autoCampaignName === result.autoCampaignName);
 
@@ -246,28 +242,34 @@ async function getReportData(dealershipDBInfo: DealershipDBInfo, startDate: Date
   return results;
 }
 
-// /**
-// * Local testing
-// */
-// // const startDate = new Date('2021-12-01');
-// // const endDate = new Date('2021-12-31');
+/**
+* Local testing
+*/
+const startDate = new Date('2020-04-26 16:24:52');
+const endDate = new Date('2020-04-27 16:24:52');
 // const startDate = new Date();
 // startDate.setFullYear(startDate.getFullYear() - 2);
 // const endDate = new Date();
-// // const startDate = new Date();
-// // startDate.setDate(startDate.getDate() - 90);
-// // const endDate = new Date();
+// const startDate = new Date();
+// startDate.setDate(startDate.getDate() - 10);
+// const endDate = new Date();
 
-// const event: Event = {
-//   // dealershipIntegralinkCodes: ['e108cd88-bea5-f4af-11ac-574465d1fd2f'],
-//   // dealershipIntegralinkCodes: ['c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
-//   dealershipIntegralinkCodes: ['99999'],
-//   // dealershipIntegralinkCodes: ['e108cd88-bea5-f4af-11ac-574465d1fd2f', 'c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
-//   startDate: startDate,
-//   endDate: endDate,
-//   replyTo: 'https://webhook.site/74251db4-e0ee-4151-9ab5-33d998362a01',
-// };
+const event = {
+  Records: [
+    {
+      body: JSON.stringify({
+        // dealershipIntegralinkCodes: ['e108cd88-bea5-f4af-11ac-574465d1fd2f'],
+        // dealershipIntegralinkCodes: ['c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
+        dealershipIntegralinkCodes: ['99999'],
+        // dealershipIntegralinkCodes: ['e108cd88-bea5-f4af-11ac-574465d1fd2f', 'c5930e0c-72d6-4cd4-bfdf-d74db1d0ce38'],
+        startDate: startDate,
+        endDate: endDate,
+        replyTo: 'https://webhook.site/74251db4-e0ee-4151-9ab5-33d998362a01',
+      })
+    }
+  ]
+};
 
-// handler(event, {}, (error: any, response: any) => {
-//   return response ? console.log('Response:', response) : console.log('Error:', error);
-// });
+handler(event, {}, (error: any, response: any) => {
+  return response ? console.log('Response:', response) : console.log('Error:', error);
+});
