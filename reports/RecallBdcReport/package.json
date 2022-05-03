@@ -9,7 +9,8 @@
     "prod": "npm run production",
     "production": "webpack --mode production",
     "watch": "npm run development -- --watch",
-    "prod-watch": "npm run production -- --watch"
+    "prod-watch": "npm run production -- --watch",
+    "test": "cd ../../ && npx ts-node reports/RecallBdcReport/src/test.ts"
   },
   "author": "",
   "license": "ISC"
