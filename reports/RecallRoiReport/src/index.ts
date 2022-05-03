@@ -29,7 +29,7 @@ if (process.env['NODE_ENV'] !== 'production') {
 /**
  * The main function that runs the entire process.
  */
-export const handler = async (event: any, _context: any, callback: any) => {
+export async function handler(event: any, _context: any, callback: any) {
   try {
     // Check required DB connection environment variables
     ['UNOTIFI_API_TOKEN', 'UNOTIFI_REPORTS_BUCKET'].forEach(envVar => {
@@ -109,7 +109,7 @@ export const handler = async (event: any, _context: any, callback: any) => {
 
     const csvData = csvWriterResults.getHeaderString() + csvWriterResults.stringifyRecords(resultsFormatted);
 
-    const s3Key = generateS3Key('recall-roi-report', 'csv', { prependToPath: 'Recall_ROI_Reports' });
+    const s3Key = generateS3Key('recall-roi-report', 'csv', { prependToPath: 'recall_roi_reports' });
 
     // This works when running via nodejs
     // const s3 = new S3Client({
