@@ -2,9 +2,21 @@ import axios from 'axios';
 import { DealershipDBInfo } from './interfaces/DealershipDBInfo';
 import { Dealer } from './interfaces/Dealer';
 
+// Configure environment variables if not in production
+if (process.env['NODE_ENV'] !== 'production') {
+  require('dotenv').config();
+}
+
+// Check that the required environment variables are set
+['UNOTIFI_API_CLIENT_BASE_URL'].forEach(envVar => {
+  if (!process.env[envVar]) {
+    throw new Error(`Please set ${envVar} in your environment`);
+  }
+});
+
 export class UnotifiApiClient {
   private token: string;
-  private baseUrl = 'http://index.unotifi.com/';
+  private baseUrl = process.env['UNOTIFI_API_CLIENT_BASE_URL'];
   private dealersEndpoint = 'api/dealers';
 
   constructor(token: string){
