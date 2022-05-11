@@ -1,21 +1,6 @@
 import { toUTCDateTimeString } from '../modules/DateHandler';
 
 /**
- * Get DB connection info query for dealerships by their IDs
- * @param dealershipIds Array of dealership id's to query
- * @returns string query
- */
-export const getDealershipsDBInfo = (dealershipIds: Array<string>) => {
-  return `
-    SELECT dealer.iddealer, dealer.internal_code, dealer.name as dealerName, database.name, database.user, database.password, databaseserver.IP FROM dealer 
-    INNER JOIN instance ON instance.idinstance = dealer.instance_idinstance
-    INNER JOIN \`database\` ON database.iddatabase = instance.database_iddatabase
-    INNER JOIN databaseserver ON databaseserver.iddatabaseserver = database.databaseServer_iddatabaseServer
-    WHERE iddealer IN (${dealershipIds.join(',')})
-  `;
-}
-
-/**
  * BDC Results
  */
 
