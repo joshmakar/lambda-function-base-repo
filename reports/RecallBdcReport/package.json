@@ -1,7 +1,7 @@
 {
   "name": "recall-bdc-report",
   "version": "1.0.0",
-  "description": "",
+  "description": "Report request handler for recall BDC reports.",
   "main": "index.js",
   "scripts": {
     "dev": "npm run development",
