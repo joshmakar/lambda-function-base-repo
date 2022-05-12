@@ -1,5 +1,5 @@
 # build output
-*/build
+**/build
 
 # env vars
 .env
@@ -108,3 +108,6 @@ dist
 
 # TernJS port file
 .tern-port
+
+# Ignore test results
+*_test-results.*

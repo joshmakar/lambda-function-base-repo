@@ -1,0 +1,17 @@
+{
+  "name": "recall-roi-report",
+  "version": "1.0.0",
+  "description": "Report request handler for recall ROI reports.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "npm run development",
+    "development": "webpack --mode development",
+    "prod": "npm run production",
+    "production": "webpack --mode production",
+    "watch": "npm run development -- --watch",
+    "prod-watch": "npm run production -- --watch",
+    "test": "cd ../../ && npx ts-node reports/RecallRoiReport/src/test.ts"
+  },
+  "author": "",
+  "license": "ISC"
+}
