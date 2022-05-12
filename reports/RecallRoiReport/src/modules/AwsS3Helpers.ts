@@ -13,7 +13,9 @@ export const generateS3Key = (filename: string, extension: string, { prependToPa
   const safePrependToPath = !prependToPath ? '' : prependToPath.replace(/[^a-zA-Z0-9][\/]/g, '_').replace(/\/?$/, '/');
   const randomNumber = Math.floor(Math.random() * 90000) + 10000;
   const date = new Date();
-  const key = `${safePrependToPath}${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}/${safeFilename}_${renderFilenameTimestamp(date)}_${randomNumber}.${extension}`;
+  const twoDigitMonth = (date.getMonth() + 1).toString().padStart(2, '0');
+  const twoDigitDay = date.getDate().toString().padStart(2, '0');
+  const key = `${safePrependToPath}${date.getFullYear()}/${twoDigitMonth}/${twoDigitDay}/${safeFilename}_${renderFilenameTimestamp(date)}_${randomNumber}.${extension}`;
 
   return key;
 }
