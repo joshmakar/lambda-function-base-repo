@@ -1,3 +1,13 @@
+# ⚠️ Divergence
+
+This repo has somewhat of a divergence at the moment. In the root of the directory are directories that contain code for Lambda Functions. In order to try and keep the directory structure organized, a new directory has been created called _reports_. This directory contains various Lambda Functions for generating reports and the Wiki goes into detail more about how this repo is setup from there.
+
+https://github.com/PerfectDayLLC/lambda-reports/wiki
+
+---
+
+⚠️ The docs below are for maintenance only. Do not follow these docs when implementing new features. ⚠️
+
 # lambda-reports
 This is the monorepo containing the codebases of next-gen reports for Unotifi (and maybe MSM down the road).
 
