@@ -41,6 +41,8 @@ export async function handler(event?: VideoReportEvent) {
         }
     });
 
+    const shortVersion = !!event?.shortVersion;
+
     // Connection for the Unotifi Index db to get the dealer db credentials
     const indexDbConn = await mysql.createConnection({
         host: process.env['UNOTIFI_COM_INDEX_DB_HOST'],
@@ -71,7 +73,8 @@ export async function handler(event?: VideoReportEvent) {
                 getReportRowForDealerRoLevel(
                     res,
                     startDateYMD,
-                    endDateYMDHMS
+                    endDateYMDHMS,
+                    shortVersion
                 )
             )
         );
@@ -79,20 +82,22 @@ export async function handler(event?: VideoReportEvent) {
         // concatenate all sub-array elements
         const rowsRoLevel = resultRoLevel.flat();
 
-        // get the RollUp report data
-        const resultRollUp = await Promise.all(
-            dealerInfoResult.map((res) =>
-                getReportRowForDealerRollUp(
-                    res,
-                    startDateYMD,
-                    endDateYMDHMS
+        let rowsRollUp: any = [];
+        if (!shortVersion) {
+            // get the RollUp report data
+            const resultRollUp = await Promise.all(
+                dealerInfoResult.map((res) =>
+                    getReportRowForDealerRollUp(
+                        res,
+                        startDateYMD,
+                        endDateYMDHMS
+                    )
                 )
-            )
-        );
+            );
 
-        // concatenate all sub-array elements
-        const rowsRollUp = resultRollUp.flat();
-
+            // concatenate all sub-array elements
+            rowsRollUp = resultRollUp.flat();
+        }
         // String if results are uploaded as a excel, null otherwise
         let reportURL: string | null = null;
 
@@ -100,7 +105,7 @@ export async function handler(event?: VideoReportEvent) {
         if (event.emailRecipients?.length) {
             // create a excel file
             const workbook = new ExcelJS.Workbook();
-            let worksheet = workbook.addWorksheet('Exhibit A - RO Level Monthly');
+            let worksheet = workbook.addWorksheet(shortVersion ? SheetName.RO_LEVEL_SHORT : SheetName.RO_LEVEL);
 
             // add the columns sheet
             worksheet.columns = Object.keys(rowsRoLevel[0]!).map((k) => ({header: k, key: k}));
@@ -110,15 +115,17 @@ export async function handler(event?: VideoReportEvent) {
                 worksheet.addRow(rowsRoLevel[rowItem]);
             }
 
-            // add a new sheet
-            worksheet = workbook.addWorksheet('Exhibit B - RO Roll-Up Monthly ');
+            if (!shortVersion) {
+                // add a new sheet
+                worksheet = workbook.addWorksheet(SheetName.ROLL_UP);
 
-            // add the columns sheet
-            worksheet.columns = Object.keys(rowsRollUp[0]!).map((k) => ({header: k, key: k}));
+                // add the columns sheet
+                worksheet.columns = Object.keys(rowsRollUp[0]!).map((k) => ({header: k, key: k}));
 
-            // add the rows
-            for (let rowItem in rowsRollUp) {
-                worksheet.addRow(rowsRollUp[rowItem]);
+                // add the rows
+                for (let rowItem in rowsRollUp) {
+                    worksheet.addRow(rowsRollUp[rowItem]);
+                }
             }
 
             // write to a new buffer
@@ -173,7 +180,7 @@ export async function handler(event?: VideoReportEvent) {
 /**
  * Concurrently executes all aggregate queries for a dealer. This function should also be called concurrently for each dealer (e.g. using Promise.all).
  */
-async function getReportRowForDealerRoLevel(dealerDbConnInfo: SelectDealerDbInfoResult, startDate: string, endDate: string): Promise<ReportRowROLevel[]> {
+async function getReportRowForDealerRoLevel(dealerDbConnInfo: SelectDealerDbInfoResult, startDate: string, endDate: string, shortVersion: boolean): Promise<ReportRowROLevel[]> {
     const reportRow: ReportRowROLevel[] = [];
 
     // Connection to the dealer database (aka sugarcrm database) for subsequent aggregate queries
@@ -201,37 +208,60 @@ async function getReportRowForDealerRoLevel(dealerDbConnInfo: SelectDealerDbInfo
 
         // return if no repair order found
         if (!rows.length) {
-            reportRow.push({
-                [ReportColumnsROLevel.VENDOR_NAME]: 'Unotifi',
-                [ReportColumnsROLevel.DEALER_NAME]: dealerDbConnInfo.dealerName || '',
-                [ReportColumnsROLevel.DEALER_CODE]: dealerDbConnInfo.internal_code,
-                [ReportColumnsROLevel.RO_NUMBER]: '',
-                [ReportColumnsROLevel.MAKE]: '',
-                [ReportColumnsROLevel.MODEL]: '',
-                [ReportColumnsROLevel.MODEL_YEAR]: '',
-                [ReportColumnsROLevel.PAY_TYPE]: '',
-                [ReportColumnsROLevel.CP_LABOR]: 0,
-                [ReportColumnsROLevel.CP_PARTS]: 0,
-                [ReportColumnsROLevel.SERVICE_ADVISOR]: '',
-                [ReportColumnsROLevel.TECHNICIAN]: '',
-                [ReportColumnsROLevel.RO_OPEN_DATE]: '',
-                [ReportColumnsROLevel.RO_CLOSED_DATE]: '',
-                [ReportColumnsROLevel.RO_OPEN_VALUE]: 0,
-                [ReportColumnsROLevel.RO_CLOSED_VALUE]: 0,
-                [ReportColumnsROLevel.RO_UPSELL_AMOUNT]: 0,
-                [ReportColumnsROLevel.OPTED_IN]: '',
-                [ReportColumnsROLevel.VIDEO_NO]: 0,
-                [ReportColumnsROLevel.HAS_VIDEO]: 0,
-                [ReportColumnsROLevel.VIEW_NO]: 0,
-                [ReportColumnsROLevel.SMS_SENT_NO]: 0,
-                [ReportColumnsROLevel.SMS_RECEIVED_NO]: 0,
-                [ReportColumnsROLevel.PHOTO_NO]: 0,
-                [ReportColumnsROLevel.RESPONSE_TIME]: 0,
-                [ReportColumnsROLevel.EMAIL_SENT_NO]: 0,
-                [ReportColumnsROLevel.EMAIL_RECEIVED_NO]: 'N/A',
-                [ReportColumnsROLevel.EMAIL_OPENED_NO]: 0,
-                [ReportColumnsROLevel.VIDEO_URLS]: '',
-            });
+            let row = {};
+            if (shortVersion) {
+                row = {
+                    [ReportColumnsROLevel.VENDOR_NAME]: 'Unotifi',
+                    [ReportColumnsROLevel.DEALER_NAME]: dealerDbConnInfo.dealerName || '',
+                    [ReportColumnsROLevel.DEALER_CODE]: dealerDbConnInfo.internal_code,
+                    [ReportColumnsROLevel.RO_NUMBER]: '',
+                    [ReportColumnsROLevel.RO_OPEN_DATE]: '',
+                    [ReportColumnsROLevel.RO_CLOSED_DATE]: '',
+                    [ReportColumnsROLevel.PAY_TYPE]: '',
+                    [ReportColumnsROLevel.VIN]: '',
+                    [ReportColumnsROLevel.MAKE]: '',
+                    [ReportColumnsROLevel.MODEL]: '',
+                    [ReportColumnsROLevel.MODEL_YEAR]: '',
+                    [ReportColumnsROLevel.VIDEO_NO]: 0,
+                    [ReportColumnsROLevel.HAS_VIDEO]: 0,
+                    [ReportColumnsROLevel.INSPECTION_ON_RO]: 0,
+                    [ReportColumnsROLevel.VIDEO_URLS]: '',
+                };
+            } else {
+                row = {
+                    [ReportColumnsROLevel.VENDOR_NAME]: 'Unotifi',
+                    [ReportColumnsROLevel.DEALER_NAME]: dealerDbConnInfo.dealerName || '',
+                    [ReportColumnsROLevel.DEALER_CODE]: dealerDbConnInfo.internal_code,
+                    [ReportColumnsROLevel.RO_NUMBER]: '',
+                    [ReportColumnsROLevel.MAKE]: '',
+                    [ReportColumnsROLevel.MODEL]: '',
+                    [ReportColumnsROLevel.MODEL_YEAR]: '',
+                    [ReportColumnsROLevel.PAY_TYPE]: '',
+                    [ReportColumnsROLevel.CP_LABOR]: 0,
+                    [ReportColumnsROLevel.CP_PARTS]: 0,
+                    [ReportColumnsROLevel.SERVICE_ADVISOR]: '',
+                    [ReportColumnsROLevel.TECHNICIAN]: '',
+                    [ReportColumnsROLevel.RO_OPEN_DATE]: '',
+                    [ReportColumnsROLevel.RO_CLOSED_DATE]: '',
+                    [ReportColumnsROLevel.RO_OPEN_VALUE]: 0,
+                    [ReportColumnsROLevel.RO_CLOSED_VALUE]: 0,
+                    [ReportColumnsROLevel.RO_UPSELL_AMOUNT]: 0,
+                    [ReportColumnsROLevel.OPTED_IN]: '',
+                    [ReportColumnsROLevel.VIDEO_NO]: 0,
+                    [ReportColumnsROLevel.HAS_VIDEO]: 0,
+                    [ReportColumnsROLevel.VIEW_NO]: 0,
+                    [ReportColumnsROLevel.SMS_SENT_NO]: 0,
+                    [ReportColumnsROLevel.SMS_RECEIVED_NO]: 0,
+                    [ReportColumnsROLevel.PHOTO_NO]: 0,
+                    [ReportColumnsROLevel.RESPONSE_TIME]: 0,
+                    [ReportColumnsROLevel.EMAIL_SENT_NO]: 0,
+                    [ReportColumnsROLevel.EMAIL_RECEIVED_NO]: 'N/A',
+                    [ReportColumnsROLevel.EMAIL_OPENED_NO]: 0,
+                    [ReportColumnsROLevel.VIDEO_URLS]: '',
+                };
+            }
+
+            reportRow.push(row);
 
             return reportRow;
         }
@@ -268,39 +298,61 @@ async function getReportRowForDealerRoLevel(dealerDbConnInfo: SelectDealerDbInfo
             // get communication data for each repair order
             const communicationData = communicationDataRows!.filter(item => item.roId == record.roId);
 
-            reportRow.push({
-                [ReportColumnsROLevel.VENDOR_NAME]: 'Unotifi',
-                [ReportColumnsROLevel.DEALER_NAME]: dealerDbConnInfo.dealerName || '',
-                [ReportColumnsROLevel.DEALER_CODE]: dealerDbConnInfo.internal_code,
-                [ReportColumnsROLevel.RO_NUMBER]: record.roNumber,
-                [ReportColumnsROLevel.MAKE]: record.makeName,
-                [ReportColumnsROLevel.MODEL]: record.modelName,
-                [ReportColumnsROLevel.MODEL_YEAR]: record.modelYear,
-                [ReportColumnsROLevel.PAY_TYPE]: laborData && laborData.length ? laborData[0]!.payType : '',
-                [ReportColumnsROLevel.CP_LABOR]: laborData && laborData.length ? laborData[0]!.laborAmount : 0,
-                [ReportColumnsROLevel.CP_PARTS]: laborData && laborData.length ? laborData[0]!.partsAmount : 0,
-                [ReportColumnsROLevel.SERVICE_ADVISOR]: record.serviceAdvisor && contactPersons[record.serviceAdvisor] ? contactPersons[record.serviceAdvisor] : record.serviceAdvisor,
-                [ReportColumnsROLevel.TECHNICIAN]: record.technician && contactPersons[record.technician] ? contactPersons[record.technician] : record.technician,
-                [ReportColumnsROLevel.RO_OPEN_DATE]: record.roOpenDate,
-                [ReportColumnsROLevel.RO_CLOSED_DATE]: record.roClosedDate,
-                [ReportColumnsROLevel.RO_OPEN_VALUE]: +record.roOpenValue,
-                [ReportColumnsROLevel.RO_CLOSED_VALUE]: +record.roClosedValue,
-                [ReportColumnsROLevel.RO_UPSELL_AMOUNT]: +record.roUpsellAmount,
-                [ReportColumnsROLevel.OPTED_IN]: record.optedIn,
-                [ReportColumnsROLevel.VIDEO_NO]: mediaData && mediaData.length ? mediaData[0]!.videoNo : 0,
-                [ReportColumnsROLevel.HAS_VIDEO]: mediaData && mediaData.length ? mediaData[0]!.hasVideo : 0,
-                [ReportColumnsROLevel.VIEW_NO]: mediaData && mediaData.length ? mediaData[0]!.viewNo : 0,
-                [ReportColumnsROLevel.SMS_SENT_NO]: communicationData && communicationData.length ? communicationData[0]!.smsSentNo : 0,
-                [ReportColumnsROLevel.SMS_RECEIVED_NO]: communicationData && communicationData.length ? communicationData[0]!.smsReceivedNo : 0,
-                [ReportColumnsROLevel.PHOTO_NO]: mediaData && mediaData.length ? mediaData[0]!.photoNo : 0,
-                [ReportColumnsROLevel.RESPONSE_TIME]: Object.keys(averageSmsResponseTimeInSeconds).length && averageSmsResponseTimeInSeconds[record.roId] ?
-                    moment.utc(averageSmsResponseTimeInSeconds[record.roId]! * 1000).format("HH:mm:ss") :
-                    0,
-                [ReportColumnsROLevel.EMAIL_SENT_NO]: communicationData && communicationData.length ? communicationData[0]!.emailSentNo : 0,
-                [ReportColumnsROLevel.EMAIL_RECEIVED_NO]: 'N/A',
-                [ReportColumnsROLevel.EMAIL_OPENED_NO]: communicationData && communicationData.length ? communicationData[0]!.emailOpenedNo : 0,
-                [ReportColumnsROLevel.VIDEO_URLS]: mediaData && mediaData.length ? mediaData[0]!.videoURLs : ''
-            });
+            let row = {};
+            if (shortVersion) {
+                row = {
+                    [ReportColumnsROLevel.VENDOR_NAME]: 'Unotifi',
+                    [ReportColumnsROLevel.DEALER_NAME]: dealerDbConnInfo.dealerName || '',
+                    [ReportColumnsROLevel.DEALER_CODE]: dealerDbConnInfo.internal_code,
+                    [ReportColumnsROLevel.RO_NUMBER]: record.roNumber,
+                    [ReportColumnsROLevel.RO_OPEN_DATE]: record.roOpenDate,
+                    [ReportColumnsROLevel.RO_CLOSED_DATE]: record.roClosedDate,
+                    [ReportColumnsROLevel.PAY_TYPE]: laborData && laborData.length ? laborData[0]!.payType : '',
+                    [ReportColumnsROLevel.VIN]: record.VIN,
+                    [ReportColumnsROLevel.MAKE]: record.makeName,
+                    [ReportColumnsROLevel.MODEL]: record.modelName,
+                    [ReportColumnsROLevel.MODEL_YEAR]: record.modelYear,
+                    [ReportColumnsROLevel.VIDEO_NO]: mediaData && mediaData.length ? mediaData[0]!.videoNo : 0,
+                    [ReportColumnsROLevel.HAS_VIDEO]: mediaData && mediaData.length ? mediaData[0]!.hasVideo : 0,
+                    [ReportColumnsROLevel.INSPECTION_ON_RO]: 0,
+                    [ReportColumnsROLevel.VIDEO_URLS]: mediaData && mediaData.length ? mediaData[0]!.videoURLs : ''
+                }
+            } else {
+                row = {
+                    [ReportColumnsROLevel.VENDOR_NAME]: 'Unotifi',
+                    [ReportColumnsROLevel.DEALER_NAME]: dealerDbConnInfo.dealerName || '',
+                    [ReportColumnsROLevel.DEALER_CODE]: dealerDbConnInfo.internal_code,
+                    [ReportColumnsROLevel.RO_NUMBER]: record.roNumber,
+                    [ReportColumnsROLevel.MAKE]: record.makeName,
+                    [ReportColumnsROLevel.MODEL]: record.modelName,
+                    [ReportColumnsROLevel.MODEL_YEAR]: record.modelYear,
+                    [ReportColumnsROLevel.PAY_TYPE]: laborData && laborData.length ? laborData[0]!.payType : '',
+                    [ReportColumnsROLevel.CP_LABOR]: laborData && laborData.length ? laborData[0]!.laborAmount : 0,
+                    [ReportColumnsROLevel.CP_PARTS]: laborData && laborData.length ? laborData[0]!.partsAmount : 0,
+                    [ReportColumnsROLevel.SERVICE_ADVISOR]: record.serviceAdvisor && contactPersons[record.serviceAdvisor] ? contactPersons[record.serviceAdvisor] : record.serviceAdvisor,
+                    [ReportColumnsROLevel.TECHNICIAN]: record.technician && contactPersons[record.technician] ? contactPersons[record.technician] : record.technician,
+                    [ReportColumnsROLevel.RO_OPEN_DATE]: record.roOpenDate,
+                    [ReportColumnsROLevel.RO_CLOSED_DATE]: record.roClosedDate,
+                    [ReportColumnsROLevel.RO_OPEN_VALUE]: +record.roOpenValue,
+                    [ReportColumnsROLevel.RO_CLOSED_VALUE]: +record.roClosedValue,
+                    [ReportColumnsROLevel.RO_UPSELL_AMOUNT]: +record.roUpsellAmount,
+                    [ReportColumnsROLevel.OPTED_IN]: record.optedIn,
+                    [ReportColumnsROLevel.VIDEO_NO]: mediaData && mediaData.length ? mediaData[0]!.videoNo : 0,
+                    [ReportColumnsROLevel.HAS_VIDEO]: mediaData && mediaData.length ? mediaData[0]!.hasVideo : 0,
+                    [ReportColumnsROLevel.VIEW_NO]: mediaData && mediaData.length ? mediaData[0]!.viewNo : 0,
+                    [ReportColumnsROLevel.SMS_SENT_NO]: communicationData && communicationData.length ? communicationData[0]!.smsSentNo : 0,
+                    [ReportColumnsROLevel.SMS_RECEIVED_NO]: communicationData && communicationData.length ? communicationData[0]!.smsReceivedNo : 0,
+                    [ReportColumnsROLevel.PHOTO_NO]: mediaData && mediaData.length ? mediaData[0]!.photoNo : 0,
+                    [ReportColumnsROLevel.RESPONSE_TIME]: Object.keys(averageSmsResponseTimeInSeconds).length && averageSmsResponseTimeInSeconds[record.roId] ?
+                    moment.utc(averageSmsResponseTimeInSeconds[record.roId]! * 1000).format("HH:mm:ss") : 0,
+                    [ReportColumnsROLevel.EMAIL_SENT_NO]: communicationData && communicationData.length ? communicationData[0]!.emailSentNo : 0,
+                    [ReportColumnsROLevel.EMAIL_RECEIVED_NO]: 'N/A',
+                    [ReportColumnsROLevel.EMAIL_OPENED_NO]: communicationData && communicationData.length ? communicationData[0]!.emailOpenedNo : 0,
+                    [ReportColumnsROLevel.VIDEO_URLS]: mediaData && mediaData.length ? mediaData[0]!.videoURLs : ''
+                }
+            }
+
+            reportRow.push(row);
         });
 
 
@@ -436,6 +488,7 @@ async function closedRORoLevelQuery(conn: mysql.Connection, dealerID: string, st
                 auto_v_make.name AS makeName,
                 auto_v_model.name AS modelName,
                 auto_vehicle.year AS modelYear,
+                auto_vehicle.name AS VIN,
                 DATE_FORMAT(auto_repair_order.service_open_date, '%m/%d/%y') AS roOpenDate,
                 DATE_FORMAT(auto_repair_order.service_closed_date, '%m/%d/%y') AS roClosedDate,
                 CAST(IFNULL(auto_repair_order.repair_order_amount_total_original, REPLACE(IFNULL(auto_repair_order.repair_order_amount_total, 0), ',', '')) AS DECIMAL (10 , 2 )) AS roOpenValue,
@@ -1188,9 +1241,17 @@ async function averageVideoViewsQuery(
 /////////////////////////////////////////////////
 
 /**
+ * Represents the sheet names of the output sheet file
+ */
+enum SheetName {
+    RO_LEVEL_SHORT = 'Vendor RO Level Monthly',
+    RO_LEVEL = 'Exhibit A - RO Level Monthly',
+    ROLL_UP = 'Exhibit B - RO Roll-Up Monthly ',
+}
+
+/**
  * Represents the column names of the output sheet file
  */
-
 enum ReportColumnsROLevel {
     VENDOR_NAME = 'Vendor Name',
     DEALER_NAME = 'Dealer Name',
@@ -1200,6 +1261,7 @@ enum ReportColumnsROLevel {
     MODEL = 'Model',
     MODEL_YEAR = 'Model Year',
     PAY_TYPE = 'Pay Type',
+    VIN = 'VIN',
     CP_LABOR = 'CP Labor $',
     CP_PARTS = 'CP Parts $',
     SERVICE_ADVISOR = 'Service Advisor',
@@ -1220,6 +1282,7 @@ enum ReportColumnsROLevel {
     EMAIL_SENT_NO = '# of Email Sent',
     EMAIL_RECEIVED_NO = '# of Email Received',
     EMAIL_OPENED_NO = '# of Email Opened/Microsite Clicked',
+    INSPECTION_ON_RO = 'Inspection on RO (YES=1, NO=0)',
     VIDEO_URLS = 'Microsite Link to Tech Video'
 }
 
@@ -1260,6 +1323,7 @@ type ROQueryResult = {
     makeName: string,
     modelName: string,
     modelYear: string,
+    VIN: string,
     payType: string,
     cpLabor: string,
     cpParts: string,
@@ -1333,6 +1397,7 @@ interface ReportRowROLevel {
     [ReportColumnsROLevel.MAKE]?: string;
     [ReportColumnsROLevel.MODEL]?: string;
     [ReportColumnsROLevel.MODEL_YEAR]?: string;
+    [ReportColumnsROLevel.VIN]?: string;
     [ReportColumnsROLevel.PAY_TYPE]?: string;
     [ReportColumnsROLevel.CP_LABOR]?: number;
     [ReportColumnsROLevel.CP_PARTS]?: number;
@@ -1354,6 +1419,7 @@ interface ReportRowROLevel {
     [ReportColumnsROLevel.EMAIL_SENT_NO]?: number;
     [ReportColumnsROLevel.EMAIL_RECEIVED_NO]?: string;
     [ReportColumnsROLevel.EMAIL_OPENED_NO]?: number;
+    [ReportColumnsROLevel.INSPECTION_ON_RO]?: number;
     [ReportColumnsROLevel.VIDEO_URLS]?: string;
 }
 
@@ -1390,6 +1456,7 @@ interface VideoReportEvent {
     emailRecipients?: string[];
     startDate?: string;
     endDate?: string;
+    shortVersion?: boolean;
 }
 
 /**

@@ -11,4 +11,5 @@ handler({
     emailRecipients: ["valeriu.onofrei@clarisoft.com"],
     // startDate: "2021-06-23",
     // endDate: "2021-06-24"
+    shortVersion: false
 }).then(resp => console.log('Lambda fn completed with response:', resp))
