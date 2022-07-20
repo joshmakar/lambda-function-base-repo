@@ -1,7 +1,7 @@
 {
-  "name": "recall-roi-report",
+  "name": "name-of-lambda-function",
   "version": "1.0.0",
-  "description": "Report request handler for recall ROI reports.",
+  "description": "Description of what Lambda Function does",
   "main": "index.js",
   "scripts": {
     "dev": "npm run development",
@@ -10,7 +10,7 @@
     "production": "webpack --mode production",
     "watch": "npm run development -- --watch",
     "prod-watch": "npm run production -- --watch",
-    "test": "cd ../../ && npx ts-node reports/RecallRoiReport/src/test.ts"
+    "test": "cd ../../ && npx ts-node LambdaFunctions/LambdaFunction/src/test.ts"
   },
   "author": "",
   "license": "ISC"
